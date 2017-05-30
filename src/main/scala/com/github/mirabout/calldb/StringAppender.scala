@@ -5,7 +5,8 @@ package com.github.mirabout.calldb
   * by splitting data in chunks and appending a new chunk to chunks collection if there is no space left in current one.
   * @param chunkSize Size of an array chunk
   */
-final class StringAppender(private val chunkSize: Int = (4096 - 32) / 2) {
+final class StringAppender(private val chunkSize: Int = (4096 - 32) / 2) extends java.lang.Appendable {
+
   private val chunks = new scala.collection.mutable.ArrayBuffer[Array[Char]]()
   private var currChunkLen = 0
 
@@ -93,29 +94,39 @@ final class StringAppender(private val chunkSize: Int = (4096 - 32) / 2) {
     chunks(chunkIndex)(elemIndex)
   }
 
-  def +=(s: String): StringAppender = {
-    assert(s != null, "string is null")
-    assert(currChunkLen < chunkSize, s"currChunkLen $currChunkLen < ChunkSize failed")
-    assert(chunks.nonEmpty, s"chunks.nonEmpty failed")
+  def append(s: String): StringAppender = this.appendNoCheck(s, 0, s.length)
 
+  def append(s: String, start: Int, end: Int): StringAppender = {
+    if (s eq null)
+      throw new IllegalArgumentException("The string is null")
+    if (start >= end)
+      throw new IllegalArgumentException(s"Start $start >= end $end")
+    if (start < 0)
+      throw new IllegalArgumentException(s"Start $start < 0")
+    if (start + end > s.length)
+      throw new IllegalArgumentException(s"Start $start + end $end > the string length ${s.length}")
+
+    this.appendNoCheck(s, start, end)
+  }
+
+  private def appendNoCheck(s: String, start: Int, end: Int): StringAppender = {
     // s.charAt(stringOffset) is a first character not copied yet
-    var stringOffset = 0
+    var stringOffset = start
+    val charsToCopy = end - start
     // First, copy string into rest of current chunk
-    val charsToCopyFirst = math.min(s.length, chunkSize - currChunkLen)
-    assert(charsToCopyFirst <= chunkSize, s"charsToCopyFirst $charsToCopyFirst <= ChunkSize failed")
-    s.getChars(0, charsToCopyFirst, chunks.last, currChunkLen)
+    val charsToCopyFirst = math.min(charsToCopy, chunkSize - currChunkLen)
+    s.getChars(start, start + charsToCopyFirst, chunks.last, currChunkLen)
+
+    if (charsToCopyFirst == charsToCopy) {
+      currChunkLen += charsToCopyFirst
+      return this
+    }
+
     stringOffset += charsToCopyFirst
-    assert(stringOffset <= s.length, s"stringOffset $stringOffset <= s.length ${s.length} failed")
-
     // For each chunk-sized block (if any) append new chunk with block content
-    val blocksCount = (s.length - stringOffset) / chunkSize
-    assert(blocksCount <= s.length / chunkSize, s"blocksCount $blocksCount <= s.length ${s.length} / ChunkSize failed")
+    var blocksLeft = (charsToCopy - charsToCopyFirst) / chunkSize
+    val charsToCopyLast = (charsToCopy - charsToCopyFirst) % chunkSize
 
-    val charsToCopyLast = (s.length - stringOffset) % chunkSize
-    assert(charsToCopyLast < chunkSize, s"charsToCopyLast $charsToCopyLast < ChunkSize failed")
-
-    val prevChunksCount = chunks.size
-    var blocksLeft = blocksCount
     while (blocksLeft > 0) {
       val newChunk = new Array[Char](chunkSize)
       s.getChars(stringOffset, stringOffset + chunkSize, newChunk, 0)
@@ -123,40 +134,63 @@ final class StringAppender(private val chunkSize: Int = (4096 - 32) / 2) {
       chunks += newChunk
       blocksLeft -= 1
     }
-    assert(stringOffset <= s.length, s"stringOffset $stringOffset <= s.length ${s.length} failed")
-    assert(blocksLeft == 0, s"blocksLeft $blocksLeft == 0 failed")
-    assert(blocksCount == (chunks.size - prevChunksCount))
 
-    // If no one block has been added and there is still some room in original last chunk,
-    // just modify offset in current chunk
-    if (blocksCount == 0 && (currChunkLen + charsToCopyFirst) != chunkSize) {
-      currChunkLen += charsToCopyFirst
-      assert(currChunkLen < chunkSize, s"currChunkLen $currChunkLen < ChunkSize failed")
-    } else {
+    if (charsToCopyLast != 0) {
       val newLastChunk = new Array[Char](chunkSize)
       s.getChars(stringOffset, stringOffset + charsToCopyLast, newLastChunk, 0)
       chunks += newLastChunk
       currChunkLen = charsToCopyLast
-      assert(stringOffset + charsToCopyLast == s.length,
-        s"stringOffset $stringOffset + charsToCopyLast $charsToCopyLast == s.length ${s.length} failed")
+    } else {
+      currChunkLen = chunkSize
     }
 
     this
   }
 
-  def +=(cs: CharSequence): StringAppender = {
-    var i = 0
-    while (i < cs.length()) {
-      this += cs.charAt(i)
-      i += 1
+  private def appendNoCheck(sb: java.lang.StringBuilder, start: Int, end: Int): StringAppender = {
+    // sb.charAt(offset) is a first character not copied yet
+    var offset = start
+    val charsToCopy = end - start
+    // First, copy string into rest of current chunk
+    val charsToCopyFirst = math.min(charsToCopy, chunkSize - currChunkLen)
+    sb.getChars(start, start + charsToCopyFirst, chunks.last, currChunkLen)
+
+    if (charsToCopy == charsToCopyFirst) {
+      currChunkLen += charsToCopyFirst
+      return this
     }
+
+    offset += charsToCopyFirst
+    // For each chunk-sized block (if any) append new chunk with block content
+    var blocksLeft = (charsToCopy - charsToCopyFirst) / chunkSize
+    val charsToCopyLast = (charsToCopy - charsToCopyFirst) % chunkSize
+    while (blocksLeft > 0) {
+      val newChunk = new Array[Char](chunkSize)
+      sb.getChars(offset, offset + chunkSize, newChunk, 0)
+      offset += chunkSize
+      chunks += newChunk
+      blocksLeft -= 1
+    }
+
+    if (charsToCopyLast != 0) {
+      val newLastChunk = new Array[Char](chunkSize)
+      sb.getChars(offset, offset + charsToCopyLast, newLastChunk, 0)
+      chunks += newLastChunk
+      currChunkLen = charsToCopyLast
+    } else {
+      currChunkLen = chunkSize
+    }
+
     this
   }
 
-  def +=(c: Char): StringAppender = {
-    assert(currChunkLen < chunkSize, s"currChunkLen $currChunkLen < ChunkSize failed")
-    assert(chunks.nonEmpty, s"chunks.nonEmpty failed")
+  def +=(csq: CharSequence): StringAppender = this.append(csq)
 
+  def +=(s: String): StringAppender = this.appendNoCheck(s, 0, s.length)
+
+  def +=(c: Char): StringAppender = this.append(c)
+
+  override def append(c: Char): StringAppender = {
     chunks.last.update(currChunkLen, c)
     currChunkLen += 1
 
@@ -166,6 +200,54 @@ final class StringAppender(private val chunkSize: Int = (4096 - 32) / 2) {
     }
 
     this
+  }
+
+  override def append(csq: CharSequence): StringAppender =
+    appendNoCheck(csq, 0, csq.length())
+
+  override def append(csq: CharSequence, start: Int, end: Int): StringAppender = {
+    if (start >= end)
+      throw new IllegalArgumentException(s"Start $start >= end $end")
+    if (start < 0)
+      throw new IllegalArgumentException(s"Start $start < 0")
+    if (csq eq null)
+      throw new IllegalArgumentException("The char sequence is null")
+    if (start + end > csq.length())
+      throw new IllegalArgumentException(s"Start $start + end $end > the char sequence length ${csq.length}")
+
+    this.appendNoCheck(csq, start, end)
+  }
+
+  private def appendNoCheck(csq: CharSequence, start: Int, end: Int): StringAppender = {
+    csq match {
+      case s: String => this.append(s, start, end)
+      case sb: java.lang.StringBuilder => this.append(sb, start, end)
+      case _ => this.appendCharSequence(csq, start, end)
+    }
+  }
+
+  private def appendCharSequence(csq: CharSequence, start: Int, end: Int): StringAppender = {
+    var i = start - 1
+    while ({ i += 1; i < end }) {
+      this.append(csq.charAt(i))
+    }
+
+    this
+  }
+
+  def append(sb: java.lang.StringBuilder): StringAppender = {
+    appendNoCheck(sb, 0, sb.length())
+  }
+
+  def append(sb: java.lang.StringBuilder, start: Int, end: Int): StringAppender = {
+    if (start >= end)
+      throw new IllegalArgumentException(s"Start $start >= end $end")
+    if (start < 0)
+      throw new IllegalArgumentException(s"Start $start < 0")
+    if (start + end > sb.length)
+      throw new IllegalArgumentException(s"Start $start + end $end > the string builder length ${sb.length}")
+
+    appendNoCheck(sb, start, end)
   }
 
   def chop(notMoreThan: Int): StringAppender = {
@@ -217,17 +299,17 @@ final class StringAppender(private val chunkSize: Int = (4096 - 32) / 2) {
 
   def debugToString: String = {
     val sb = new java.lang.StringBuilder()
-    sb.append("StringAppender{")
-    sb.append("length=").append(this.length).append(",full-chunks=[")
+    sb.append("StringAppender{chunkSize=").append(this.chunkSize)
+    sb.append(",length=").append(this.length).append(",full-chunks=[")
     for (chunk <- chunks.take(chunks.length - 1)) {
       sb.append('[').append(chunk).append(']').append(',')
     }
     // Chop last comma
-    sb.setLength(sb.length() - 1)
-    sb.append("],active-chunk=[")
-    for (char <- chunks.last.take(currChunkLen)) {
-      sb.append(char)
+    if (chunks.length > 1) {
+      sb.setLength(sb.length() - 1)
     }
+    sb.append(s"],active-chunk=[")
+    sb.append(chunks.last, 0, currChunkLen)
     sb.append(']').append("+").append(chunkSize - currChunkLen).append("cells-left")
     sb.append('}')
     sb.toString
