@@ -50,12 +50,14 @@ trait WithSqlExecutedBeforeAndAfter extends WithConnectionLifecycle {
 
   override def connect(): Connection = {
     val connection = super.connect()
+    executeSql(connection, "begin transaction isolation level serializable")
     executeSql(connection, readFileAsString(mkFilePath("Before")))
     connection
   }
 
   override def disconnect(connection: Connection): Unit = {
     executeSql(connection, readFileAsString(mkFilePath("After")))
+    executeSql(connection, "rollback")
     super.disconnect(connection)
   }
 
