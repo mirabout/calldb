@@ -22,20 +22,14 @@ trait GenericTable extends ColumnReaders with ColumnWriters with ColumnTypeProvi
 
 trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllColumns[E] with WithAllProcedures[E] {
 
-  type Entity = E
-
-  type DefinedProcedure[R] = ProceduresReflector.DefinedProcedure[R]
-
-  type CR[C] = ColumnReader[C]
-  type CW[C] = ColumnWriter[C]
-  type CTP[C] = ColumnTypeProvider[C]
-
-  def column[Column](name: Symbol, extractor: E => Column)(implicit r: CR[Column], w: CW[Column], tp: CTP[Column]) =
+  def column[Column](name: Symbol, extractor: E => Column)(implicit r: ColumnReader[Column],
+                                                           w: ColumnWriter[Column],
+                                                           tp: ColumnTypeProvider[Column]) =
     TableColumn.apply(name, extractor, this.tableName.exactName)
 
-  protected var _allProcedures: Seq[DefinedProcedure[_]] = null
+  protected var _allProcedures: Seq[ProceduresReflector.DefinedProcedure[_]] = null
 
-  def allProcedures: Seq[DefinedProcedure[_]] = {
+  def allProcedures: Seq[ProceduresReflector.DefinedProcedure[_]] = {
     if (_allProcedures eq null) {
       BUG(s"$this: `_allProcedures` var has not been set or injected")
     }
@@ -64,10 +58,10 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   final lazy val _nonKeyColumns: IndexedSeq[TableColumn[E, _]] = allColumns.diff(keyColumns)
 
-  def entityParser: RowDataParser[Entity]
+  def entityParser: RowDataParser[E]
 
-  protected def mkRowParser(parseFunc: RowData => Entity): RowDataParser[Entity] = {
-    new RowDataParser[Entity](parseFunc) {
+  protected def mkRowParser(parseFunc: RowData => E): RowDataParser[E] = {
+    new RowDataParser[E](parseFunc) {
       override def expectedColumnsNames: Option[IndexedSeq[String]] = Some(allColumns.map(_.name))
     }
   }
@@ -75,7 +69,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
   private lazy val EntityDef = EntityParamsDef(allColumns, tableName)
   private lazy val EntitiesArrayDef = EntitiesArrayParamsDef(allColumns, tableName)
 
-  implicit lazy val entityTypeProvider: EntityParamsDef[Entity] = EntityDef
+  implicit lazy val entityTypeProvider: EntityParamsDef[E] = EntityDef
 
   lazy val pInsert = Procedure1(EntityDef).mapWith(_ == 1)
 
