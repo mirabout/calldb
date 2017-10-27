@@ -81,6 +81,102 @@ trait BoilerplateSqlGenerator {
   */
 trait GenericEntityTableBoilerplateSqlGenerator extends BoilerplateSqlGenerator { self: GenericEntityTable[_] =>
 
+  trait RetrieveByConditionProcedureGenerator extends StatementsGenerator {
+    val simpleProcedureName: String
+    val queryCondition: String
+    val procedureArgs: String
+    val additionalVarDecls: Option[String] = None
+
+    private def fullProcedureName = s"p${tableName.withoutPrefix}_$simpleProcedureName($procedureArgs)"
+
+    private def mkQualifiedResultColumns(indentSpaces: Int = 4): String = {
+      val sb = new StringBuilder()
+      for(column <- allColumns) {
+        sb.append(" " * indentSpaces)
+        sb.append("v.").append(tableName.exactName).append("__").append(column.name)
+        sb.append(" = r.").append(column.name)
+        sb.append(";\n")
+      }
+      // Chop last ;\n
+      if (allColumns.nonEmpty) {
+        sb.setLength(sb.length - 2)
+      }
+      sb.toString()
+    }
+
+    override protected def createSqlImpl: String = {
+      s"create function $fullProcedureName returns setof v${tableName.withoutPrefix} as $$$$\n" +
+      s"declare\n" +
+      s"  r ${tableName.exactName}%rowtype;\n" +
+      s"  v v${tableName.withoutPrefix}%rowtype;\n" +
+      additionalVarDecls.getOrElse("") +
+      s"begin\n" +
+      s"  for r in select * from ${tableName.exactName}\n" +
+      s"  where $queryCondition\n" +
+      s"  loop\n" +
+      s"${mkQualifiedResultColumns()};\n" +
+      s"    return next v;\n" +
+      s"  end loop;\n" +
+      s"  return;\n" +
+      s"end;\n" +
+      s"$$$$ language plpgsql"
+    }
+
+    override protected def dropSqlImpl: String =
+      s"drop function $fullProcedureName"
+  }
+
+  trait RetrieveByColumnsProcedureGenerator extends RetrieveByConditionProcedureGenerator {
+    /**
+      * @note Should be overridden using a function or a lazy value to avoid initialization order issues
+      */
+    val conditionColumns: Traversable[TableColumn[_,_]]
+
+    override val queryCondition: String = {
+      assert(conditionColumns.nonEmpty)
+      val sb = new StringBuilder()
+      sb.append("(")
+      for (column <- conditionColumns) {
+        sb.append(s"(${tableName.exactName}.${column.name} = param_${column.name}) and ")
+      }
+      // Chop last " and "
+      sb.setLength(sb.length - 5)
+      sb.append(")")
+      sb.toString()
+    }
+
+    override val procedureArgs: String = {
+      assert(conditionColumns.nonEmpty)
+      val sb = new StringBuilder()
+      for (column <- conditionColumns) {
+        column.typeTraits.asEitherBasicOrCompound match {
+          case Left(basicTypeTraits) =>
+            sb.append(s"${column.name} ${basicTypeTraits.storedInType.sqlName}, ")
+          case Right(compoundTypeTraits) =>
+            throw new AssertionError(s"Column $column has non-basic type traits $compoundTypeTraits")
+        }
+      }
+      // Chop last comma and space
+      sb.setLength(sb.length - 2)
+      sb.toString()
+    }
+
+    override val additionalVarDecls: Option[String] = {
+      assert(conditionColumns.nonEmpty)
+      val sb = new StringBuilder()
+      for (column <- conditionColumns) {
+        column.typeTraits.asEitherBasicOrCompound match {
+          case Left(basicTypeTraits) =>
+            sb.append(s"  param_${column.name} ${basicTypeTraits.storedInType.sqlName} := ${column.name};\n")
+          case Right(compoundTypeTraits) =>
+            throw new AssertionError(s"Column $column has non-basic type traits $compoundTypeTraits")
+        }
+      }
+      // Last ;\n are kept as the expected formatting requires
+      Some(sb.toString())
+    }
+  }
+
   /**
     * It's better to avoid executing these tests right on trait construction to avoid initialiation order issues
     */

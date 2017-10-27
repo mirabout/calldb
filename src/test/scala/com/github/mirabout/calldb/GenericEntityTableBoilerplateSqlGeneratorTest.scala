@@ -5,11 +5,11 @@ import java.util.UUID
 import org.specs2.matcher.MatchResult
 import org.specs2.mutable._
 
-private case class DummyEntity(id: UUID, tag: Option[String], latitude: Double, longitude: Double)
+case class GeneratorTestEntity(id: UUID, tag: Option[String], latitude: Double, longitude: Double)
 
-private class TestedTable extends GenericEntityTable[DummyEntity] with GenericEntityTableBoilerplateSqlGenerator {
+class GeneratorTestTable extends GenericEntityTable[GeneratorTestEntity] with GenericEntityTableBoilerplateSqlGenerator {
   override lazy val tableName = TableName("tDummy")
-  override lazy val entityParser: RowDataParser[DummyEntity] = ???
+  override lazy val entityParser: RowDataParser[GeneratorTestEntity] = ???
 
   lazy val Id = column('id, _.id)
   lazy val Tag = column('tag, _.tag)
@@ -21,22 +21,21 @@ private class TestedTable extends GenericEntityTable[DummyEntity] with GenericEn
   override lazy val keyColumns = IndexedSeq(Id)
 }
 
-private object TestedTable extends TestedTable
+private[this] object GeneratorTestTable extends GeneratorTestTable
 
 class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
-
 
   "GenericEntityTableBoilerplateSqlGenerator" should {
 
     "provide procedures and views statement generator groups" in {
-      val generatorGroupsMap = TestedTable.boilerplateGeneratorGroups().toMap
+      val generatorGroupsMap = GeneratorTestTable.boilerplateGeneratorGroups().toMap
       generatorGroupsMap should haveKeys("procedures", "views")
       generatorGroupsMap("procedures") must not(beEmpty)
       generatorGroupsMap("views") must not(beEmpty)
     }
 
     "provide fully qualified column names view generator" in new WithBoilerplateGeneratorTestEnvironment {
-      val generatorGroupsMap = TestedTable.boilerplateGeneratorGroups().toMap
+      val generatorGroupsMap = GeneratorTestTable.boilerplateGeneratorGroups().toMap
       val optViewGenerator = generatorGroupsMap("views").toMap.get("fully qualified fields view")
       optViewGenerator must beSome
       val viewGenerator = optViewGenerator.get
@@ -94,11 +93,11 @@ class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
   }
 }
 
-class WithBoilerplateGeneratorTestEnvironment
-  extends WithTestConnectionAndSqlExecuted("BoilerplateGeneratorTest")
-  with SpecLike {
+class WithBoilerplateGeneratorSqlExecuted extends WithTestConnectionAndSqlExecuted("BoilerplateGeneratorTest")
 
-  private def proceduresGroupMap() = TestedTable.boilerplateGeneratorGroups().toMap.apply("procedures").toMap
+class WithBoilerplateGeneratorTestEnvironment extends WithBoilerplateGeneratorSqlExecuted with SpecLike {
+
+  private def proceduresGroupMap() = GeneratorTestTable.boilerplateGeneratorGroups().toMap.apply("procedures").toMap
 
   def testProcedure(key: String, signature: String): MatchResult[String] = {
     val generator = proceduresGroupMap().apply(key)
