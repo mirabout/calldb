@@ -90,6 +90,14 @@ class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
     "provide insert or update many procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
       testProcedure("insert or update many procedure", "pDummy_InsertOrUpdateMany(entities tDummy[])")
     }
+
+    "provide qualify columns procedure" in new WithBoilerplateGeneratorTestEnvironment {
+      private val generatorGroupsMap = GeneratorTestTable.boilerplateGeneratorGroups().toMap
+      private val viewGenerator = generatorGroupsMap("views").toMap.apply("fully qualified fields view")
+      executeSql(connection, viewGenerator.createSql.get)
+      testProcedure("qualify columns procedure", "pQualifyColumns(t tDummy)")
+      executeSql(connection, viewGenerator.dropSql.get)
+    }
   }
 }
 
