@@ -65,13 +65,42 @@ trait BoilerplateSqlGenerator {
     protected def dropSqlImpl: String = null
   }
 
-/**
-  * @return A [[Seq]] of generator groups.
-  *         Each group consists of a string description and an actual list of generators tagged by strings as well.
-  *         Making separated groups tagged by strings helps in providing useful log/debug info.
-  * @note We use a [[Seq]] type because generation order might be important.
+  /**
+    * A container for instances of [[StatementsGenerator]] that adds a description
+    * and allows ordering of generators to manually resolve generator dependencies.
+ *
+    * @param description A string description for the generator
+    * @param generator_ A call-by-name generator provider.
+    *                   Non-eager evaluation of the generator is important since they usually
+    *                   refer to instances of [[GenericEntityTable]] which are prone to initialization order issues.
+    * @param order      An order group of the generator. Must be a positive integer.
+    *                   Lower the `order` is, earlier the generated SQL for entities creation should be executed.
+    *                   Lower the `order` is, later the generated SQL for entities drop should be executed.
+    *                   Having multiple [[StatementGeneratorProps]] with the same order in a list is legal.
+    *                   The order of execution of statements with the same order is not specified.
+    *
+    */
+  class StatementGeneratorProps(val description: String, generator_ : => StatementsGenerator, val order: Int)
+    extends Ordered[StatementGeneratorProps] {
+    if (order < 1) {
+      throw new IllegalArgumentException(s"An order $order must be positive")
+    }
+
+    def generator: StatementsGenerator = generator_
+
+    override def compare(that: StatementGeneratorProps): Int =
+      java.lang.Integer.compare(this.order, that.order)
+
+    def createSql: Option[String] = generator.createSql
+    def createOrReplaceSql: Option[String] = generator.createOrReplaceSql
+    def dropSql: Option[String] = generator.dropSql
+    def dropIfExistsSql: Option[String] = generator.dropIfExistsSql
+  }
+
+ /**
+  * @return A [[Traversable]] of [[StatementGeneratorProps]].
   */
-  def boilerplateGeneratorGroups(): Seq[(String, Seq[(String, StatementsGenerator)])]
+  def generatorProps(): Traversable[StatementGeneratorProps]
 }
 
 /**
@@ -416,20 +445,18 @@ trait GenericEntityTableBoilerplateSqlGenerator extends BoilerplateSqlGenerator 
       s"drop function pQualifyColumns(t ${tableName.exactName})"
   }
 
-  def proceduresGenerators: Seq[(String, StatementsGenerator)] = Seq(
-    ("insert procedure", insertSql),
-    ("update procedure", updateSql),
-    ("insert many procedure", insertManySql),
-    ("update many procedure", updateManySql),
-    ("insert or ignore procedure", insertOrIgnoreSql),
-    ("insert or update procedure", insertOrUpdateSql),
-    ("insert or ignore many procedure", insertOrIgnoreManySql),
-    ("insert or update many procedure", insertOrUpdateManySql),
-    ("qualify columns procedure", qualifyColumnsSql))
+  private def newProps(description: String, generator: => StatementsGenerator, order: Int) =
+    new StatementGeneratorProps(description, generator, order)
 
-  def viewsGenerators: Seq[(String, StatementsGenerator)] = Seq(("fully qualified fields view", viewSql))
-
-  override def boilerplateGeneratorGroups: Seq[(String, Seq[(String, StatementsGenerator)])] = {
-    Seq(("procedures", proceduresGenerators), ("views", viewsGenerators))
-  }
+  def generatorProps(): Traversable[StatementGeneratorProps] = Traversable(
+    newProps("insert procedure", insertSql, 3),
+    newProps("update procedure", updateSql, 3),
+    newProps("insert many procedure", insertManySql, 3),
+    newProps("update many procedure", updateManySql, 3),
+    newProps("insert or ignore procedure", insertOrIgnoreSql, 3),
+    newProps("insert or update procedure", insertOrUpdateSql, 3),
+    newProps("insert or ignore many procedure", insertOrIgnoreManySql, 3),
+    newProps("insert or update many procedure", insertOrUpdateManySql, 3),
+    newProps("qualify columns procedure", qualifyColumnsSql, 2),
+    newProps("fully qualified fields view", viewSql, 1))
 }

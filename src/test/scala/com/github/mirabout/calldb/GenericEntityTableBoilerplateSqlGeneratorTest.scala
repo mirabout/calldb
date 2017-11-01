@@ -25,18 +25,14 @@ private[this] object GeneratorTestTable extends GeneratorTestTable
 
 class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
 
+  private def generatorPropsMap: Map[String, BoilerplateSqlGenerator#StatementGeneratorProps] = {
+    GeneratorTestTable.generatorProps().map(props => (props.description, props)).toMap
+  }
+
   "GenericEntityTableBoilerplateSqlGenerator" should {
 
-    "provide procedures and views statement generator groups" in {
-      val generatorGroupsMap = GeneratorTestTable.boilerplateGeneratorGroups().toMap
-      generatorGroupsMap should haveKeys("procedures", "views")
-      generatorGroupsMap("procedures") must not(beEmpty)
-      generatorGroupsMap("views") must not(beEmpty)
-    }
-
     "provide fully qualified column names view generator" in new WithBoilerplateGeneratorTestEnvironment {
-      val generatorGroupsMap = GeneratorTestTable.boilerplateGeneratorGroups().toMap
-      val optViewGenerator = generatorGroupsMap("views").toMap.get("fully qualified fields view")
+      val optViewGenerator = generatorPropsMap.get("fully qualified fields view")
       optViewGenerator must beSome
       val viewGenerator = optViewGenerator.get
 
@@ -92,8 +88,7 @@ class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
     }
 
     "provide qualify columns procedure" in new WithBoilerplateGeneratorTestEnvironment {
-      private val generatorGroupsMap = GeneratorTestTable.boilerplateGeneratorGroups().toMap
-      private val viewGenerator = generatorGroupsMap("views").toMap.apply("fully qualified fields view")
+      private val viewGenerator = generatorPropsMap.apply("fully qualified fields view")
       executeSql(connection, viewGenerator.createSql.get)
       testProcedure("qualify columns procedure", "pQualifyColumns(t tDummy)")
       executeSql(connection, viewGenerator.dropSql.get)
@@ -105,10 +100,8 @@ class WithBoilerplateGeneratorSqlExecuted extends WithTestConnectionAndSqlExecut
 
 class WithBoilerplateGeneratorTestEnvironment extends WithBoilerplateGeneratorSqlExecuted with SpecLike {
 
-  private def proceduresGroupMap() = GeneratorTestTable.boilerplateGeneratorGroups().toMap.apply("procedures").toMap
-
   def testProcedure(key: String, signature: String): MatchResult[String] = {
-    val generator = proceduresGroupMap().apply(key)
+    val generator = GeneratorTestTable.generatorProps().map(props => (props.description, props)).toMap.apply(key)
     val actualCreateSql = generator.createSql.get
     executeSql(connection, actualCreateSql)
     val expectedDropSql = s"drop function $signature"
