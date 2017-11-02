@@ -7,6 +7,8 @@ class RetrieveByColumnsProcedureGeneratorTest extends Specification {
   private[this] object TestTable extends GeneratorTestTable {
     case class Generator(override val simpleProcedureName: String, columns: TableColumn[_,_]*)
       extends RetrieveByColumnsProcedureGenerator {
+      override lazy val tableName = TestTable.tableName
+      override lazy val allColumns: Traversable[TableColumn[_,_]] = TestTable.allColumns
       override lazy val conditionColumns: Traversable[TableColumn[_,_]] = columns
     }
   }
@@ -55,8 +57,7 @@ class RetrieveByColumnsProcedureGeneratorTest extends Specification {
 }
 
 class WithRetrieveByColumnsGeneratorTestEnvironment extends WithBoilerplateGeneratorSqlExecuted with SpecLike {
-  type Generator = BoilerplateSqlGenerator#StatementsGenerator
-  def testProcedure(generator: Generator, simpleProcedureName: String, args: String) : MatchResult[String] = {
+  def testProcedure(generator: StatementsGenerator, simpleProcedureName: String, args: String) : MatchResult[String] = {
     // Testing procedures requires creation of vDummy.
     // We cannot add it to Before/After SQL scripts because these scripts are shared
     // for generator tests and vDummy creation is tested itself in another test.

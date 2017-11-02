@@ -25,7 +25,7 @@ private[this] object GeneratorTestTable extends GeneratorTestTable
 
 class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
 
-  private def generatorPropsMap: Map[String, BoilerplateSqlGenerator#StatementGeneratorProps] = {
+  private def generatorPropsMap: Map[String, StatementsGeneratorProps] = {
     GeneratorTestTable.generatorProps().map(props => (props.description, props)).toMap
   }
 
