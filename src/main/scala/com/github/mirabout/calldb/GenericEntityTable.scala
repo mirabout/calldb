@@ -158,8 +158,7 @@ trait RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
     var i = -1
     while ({i += 1; i < allColumns.size}) {
       val column = columnByIndexMap(i)
-      val paramValue = column.apply(value)
-      column.encodeRowValue(paramValue.value, output)
+      column.encodeRowValue(column.apply(value), output)
       output += ','
     }
     // Chop the last comma
