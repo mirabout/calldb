@@ -173,6 +173,21 @@ final class TableColumn[E, C](
 }
 
 object TableColumn {
+  /**
+    * Provides an [[Ordering]] of columns by an injected column index (acquired from a database)
+    */
+  val orderingByIndex: Ordering[TableColumn[_,_]] = new Ordering[TableColumn[_,_]] {
+    def compare(x: TableColumn[_, _], y: TableColumn[_,_]): Int = {
+      if (x.columnIndex < 0) {
+        throw new AssertionError(s"A database index of $x has not been injected")
+      }
+      if (y.columnIndex < 0) {
+        throw new AssertionError(s"A database index of $y has not been injected")
+      }
+      Integer.compare(x.columnIndex, y.columnIndex)
+    }
+  }
+
   def apply[E, C](name: String, fromEntity: E => C, tableName: => String)
     (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: ColumnTypeProvider[C]): TableColumn[E, C] =
       new TableColumn(name, fromEntity, Some(tableName))
