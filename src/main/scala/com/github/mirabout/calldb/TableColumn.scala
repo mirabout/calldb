@@ -176,8 +176,8 @@ object TableColumn {
   /**
     * Provides an [[Ordering]] of columns by an injected column index (acquired from a database)
     */
-  val orderingByIndex: Ordering[TableColumn[_,_]] = new Ordering[TableColumn[_,_]] {
-    def compare(x: TableColumn[_, _], y: TableColumn[_,_]): Int = {
+  val orderingByIndex: Ordering[TableColumn[_, _]] = new Ordering[TableColumn[_, _]] {
+    def compare(x: TableColumn[_, _], y: TableColumn[_, _]): Int = {
       if (x.columnIndex < 0) {
         throw new AssertionError(s"A database index of $x has not been injected")
       }

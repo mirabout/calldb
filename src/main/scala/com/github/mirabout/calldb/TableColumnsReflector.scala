@@ -1,34 +1,18 @@
 package com.github.mirabout.calldb
 
-class TableColumnsReflector {
+import scala.reflect.runtime.universe
 
-  import scala.reflect.runtime.universe.TermSymbol
-  import scala.reflect.runtime.{universe => runtimeUniverse}
+class TableColumnsReflector extends ReflectionHelpers {
+  private def isAColumn(term: universe.TermSymbol) =
+    doesVarLikeTermMatchType(term, universe.typeOf[TableColumn[_,_]])
 
   def reflectAllColumns[E](instance: AnyRef): Set[TableColumn[E, _]] =
-    reflectColumns(instance, !_.annotations.exists(_.tree.tpe =:= runtimeUniverse.typeOf[ignoredColumn]))
+    reflectFieldsWithFilter(instance, term => isAColumn(term) && !isAnnotatedWith(term, universe.typeOf[ignoredColumn])).
+      values.toSet.asInstanceOf[Set[TableColumn[E, _]]]
 
   def reflectKeyColumns[E](instance: AnyRef): Set[TableColumn[E, _]] =
-    reflectColumns(instance, _.annotations.exists(_.tree.tpe =:= runtimeUniverse.typeOf[keyColumn]))
-
-  private def reflectColumns[E](instance: AnyRef, columnFilter: TermSymbol => Boolean): Set[TableColumn[E, _]] = {
-    import scala.reflect.runtime.universe
-    val runtimeMirror = universe.runtimeMirror(getClass.getClassLoader)
-    val instanceMirror = runtimeMirror.reflect(instance)
-    val typeMirror = instanceMirror.symbol.toType
-
-    val termSymbols = for (m <- typeMirror.members if m.isTerm) yield m.asTerm
-    val columnTermSymbols = termSymbols.view.filter(_.typeSignature.erasure =:= universe.typeOf[TableColumn[_,_]].erasure)
-    val filteredTermSymbols = columnTermSymbols.filter(columnFilter)
-
-    val columnValsOrVars = filteredTermSymbols.filter(sym => sym.isVal || sym.isVar)
-    val columnLazyVals = filteredTermSymbols.filter(_.isLazy)
-
-    val reflectedValues = {
-      (for (sym <- columnValsOrVars) yield instanceMirror.reflectField(sym).get) ++
-      (for (sym <- columnLazyVals) yield instanceMirror.reflectMethod(sym.getter.asMethod).apply())
-    }
-
-    reflectedValues.toSet.asInstanceOf[Set[TableColumn[E, _]]]
-  }
+    reflectFieldsWithFilter(instance, term => isAColumn(term) && isAnnotatedWith(term, universe.typeOf[keyColumn])).
+      values.toSet.asInstanceOf[Set[TableColumn[E, _]]]
 }
+
+object TableColumnsReflector extends TableColumnsReflector
