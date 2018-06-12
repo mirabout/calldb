@@ -80,8 +80,8 @@ trait ColumnTypeProviders extends BugReporting {
   implicit final val stringColumnTypeProvider = new ScalarProvider(classOf[String], PgType.Text)
   implicit final val bytesTypeProvider = new ScalarProvider(classOf[Array[Byte]], PgType.Bytea)
   implicit final val uuidColumnTypeProvider = new ScalarProvider(classOf[UUID], PgType.Uuid)
-  implicit final val dateTimeTypeProvider = new ScalarProvider(classOf[DateTime], PgType.Timestamp)
-  implicit final val localDateTimeTypeProvider = new ScalarProvider(classOf[LocalDateTime], PgType.Timestamptz)
+  implicit final val dateTimeTypeProvider = new ScalarProvider(classOf[DateTime], PgType.Timestamptz)
+  implicit final val localDateTimeTypeProvider = new ScalarProvider(classOf[LocalDateTime], PgType.Timestamp)
 
   private def failOnNullElemProvider[A](elemProvider: TypeProvider[A], classTag: ClassTag[A]): Unit = {
     if (elemProvider eq null) {
