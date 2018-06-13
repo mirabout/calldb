@@ -6,7 +6,6 @@ import com.github.mauricio.async.db.ResultSet
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.reflect.ClassTag
 
 sealed abstract class UntypedRoutine extends BugReporting {
   // It is intended to be set during database schema check
@@ -14,7 +13,7 @@ sealed abstract class UntypedRoutine extends BugReporting {
 
   def nameInDatabase: String = {
     if (_nameInDatabase eq null) {
-      BUG(s"$this: _databaseName has not been set before name access")
+      BUG(s"$this: _nameInDatabase has not been set before name access")
     }
     _nameInDatabase
   }
@@ -139,14 +138,9 @@ sealed trait TypedCallable[R] { self: UntypedRoutine =>
 
   override def buildCallSql(args: String*): String = {
     val appender = new StringAppender()
-    if (resultType.isBasic) {
-      appender += "SELECT "
-    } else {
-      appender += "SELECT * FROM "
-    }
+    appender += (if (resultType.isBasic) "select " else "select * from ")
     appender += nameInDatabase
     appendSqlCallArgs(appender, args :_*)
-    println(appender.result())
     appender.result()
   }
 }
@@ -162,83 +156,80 @@ private[calldb] class DummyTypedCallable[T](name: String, val resultType: TypeTr
   extends UntypedRoutine with TypedCallable[T] {
   _nameInDatabase = name
   override def paramsDefs = Seq()
-  override def resultColumnsNames = None
+  override def resultColumnsNames: Option[IndexedSeq[String]] = None
 }
 
-sealed abstract class AbstractTypedProcedure[R](val paramsDefs: ParamsDef[_]*)(implicit tp: TypeProvider[R])
+sealed abstract class AbstractTypedProcedure[R](val paramsDefs: ParamsDef[_]*)
   extends UntypedProcedure with TypedCallable[R] {
-  override def resultType: TypeTraits = tp.typeTraits
-  override def resultColumnsNames = None
+  override def resultType: TypeTraits = ColumnTypeProviders.longColumnTypeProvider.typeTraits
+  override def resultColumnsNames: Option[IndexedSeq[String]] = None
 }
 
-sealed abstract class GenProcedure0[R](mapper: Long => R)(implicit tp: TypeProvider[R])
-  extends AbstractTypedProcedure {
+class GenProcedure0[R](mapper: Long => R) extends AbstractTypedProcedure() {
+  def apply()(implicit c: Connection): Future[R] =
+    call() map mapper
 
-  def apply()(implicit c: Connection): Future[R] = call() map mapper
-
-  def mapWith[RR](newMapper: R => RR)(implicit tp: TypeProvider[RR]) =
+  def mapWith[RR](newMapper: R => RR): GenProcedure0[RR] =
     new GenProcedure0[RR](newMapper compose mapper) {}
 }
 
-// Dummy implicit parameter suppresses empty parameter case class warning
-final case class Procedure0(implicit tp: TypeProvider[Long]) extends GenProcedure0[Long](identity)
+class Procedure0 extends GenProcedure0(identity)
 
-sealed abstract class GenProcedure1[R, T1](_1: ParamsDef[T1], mapper: Long => R)(implicit tp: TypeProvider[R])
-  extends AbstractTypedProcedure(_1) {
+object Procedure0 {
+  def apply() = new Procedure0
+}
 
-  def apply(v1: T1)(implicit c: Connection): Future[R] = call(_1.encodeParam(v1)) map mapper
+class GenProcedure1[R, T1](_1: ParamsDef[T1], mapper: Long => R) extends AbstractTypedProcedure(_1) {
 
-  def mapWith[RR](newMapper: R => RR)(implicit tp: TypeProvider[RR]) =
+  def apply(v1: T1)(implicit c: Connection): Future[R] =
+    call(_1.encodeParam(v1)) map mapper
+
+  def mapWith[RR](newMapper: R => RR): GenProcedure1[RR, T1] =
     new GenProcedure1[RR, T1](_1, newMapper compose mapper) {}
 }
 
-final case class Procedure1[T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Long])
-  extends GenProcedure1[Long, T1](_1, identity)
+case class Procedure1[T1](_1: ParamsDef[T1]) extends GenProcedure1(_1, identity)
 
-sealed abstract class GenProcedure2[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2], mapper: Long => R)(implicit tp: TypeProvider[R])
+class GenProcedure2[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2], mapper: Long => R)
   extends AbstractTypedProcedure(_1, _2) {
 
   def apply(v1: T1, v2: T2)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2)) map mapper
 
-  def mapWith[RR](newMapper: R => RR)(implicit tp: TypeProvider[RR]) =
+  def mapWith[RR](newMapper: R => RR): GenProcedure2[RR, T1, T2] =
     new GenProcedure2[RR, T1, T2](_1, _2, newMapper compose mapper) {}
 }
 
-final case class Procedure2[T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[Long])
-  extends GenProcedure2[Long, T1, T2](_1, _2, identity)
+case class Procedure2[T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2]) extends GenProcedure2(_1, _2, identity)
 
-sealed abstract class GenProcedure3[R, T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], mapper: Long => R)
-    (implicit tp: TypeProvider[R])
-  extends AbstractTypedProcedure(_1, _2, _3) {
+class GenProcedure3[R, T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], mapper: Long => R)
+    extends AbstractTypedProcedure(_1, _2, _3) {
 
   def apply(v1: T1, v2: T2, v3: T3)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2), _3.encodeParam(v3)) map mapper
 
-  def mapWith[RR](newMapper: R => RR)(implicit tp: TypeProvider[RR]) =
+  def mapWith[RR](newMapper: R => RR): GenProcedure3[RR, T1, T2, T3] =
     new GenProcedure3[RR, T1, T2, T3](_1, _2, _3, newMapper compose mapper) {}
 }
 
-final case class Procedure3[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
-    (implicit tp: TypeProvider[Long])
+case class Procedure3[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
   extends GenProcedure3(_1, _2, _3, identity)
 
-sealed abstract class GenProcedure4[R, T1, T2, T3, T4](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4], mapper: Long => R)
-  (implicit tp: TypeProvider[R])
-  extends AbstractTypedProcedure(_1, _2, _3, _4) {
+class GenProcedure4[R, T1, T2, T3, T4]
+  (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4], mapper: Long => R)
+    extends AbstractTypedProcedure(_1, _2, _3, _4) {
 
   def apply(v1: T1, v2: T2, v3: T3, v4: T4)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2), _3.encodeParam(v3), _4.encodeParam(v4)) map mapper
 
-  def mapWith[RR](newMapper: R => RR)(implicit tp: TypeProvider[RR]) =
+  def mapWith[RR](newMapper: R => RR): GenProcedure4[RR, T1, T2, T3, T4] =
     new GenProcedure4[RR, T1, T2, T3, T4](_1, _2, _3, _4, newMapper compose mapper) {}
 }
 
-final case class Procedure4[T1, T2, T3, T4](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
-    (implicit tp: TypeProvider[Long])
+case class Procedure4[T1, T2, T3, T4](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
   extends GenProcedure4(_1, _2, _3, _4, identity)
 
-sealed abstract class UntypedFunction[R](parser: ResultSetParser[R]) extends UntypedRoutine {
+abstract class UntypedFunction[R](parser: ResultSetParser[R]) extends UntypedRoutine {
   protected final def call(args: String*)(implicit c: Connection): Future[R] = {
     callForResultSet(args :_*) map { resultSet =>
       parser.parse(resultSet)
@@ -246,52 +237,73 @@ sealed abstract class UntypedFunction[R](parser: ResultSetParser[R]) extends Unt
   }
 }
 
-sealed abstract class AbstractTypedFunction[R](parser: ResultSetParser[R], val paramsDefs: ParamsDef[_]*)
-    (implicit classTag: ClassTag[R], tp: TypeProvider[R])
+abstract class AbstractTypedFunction[R](parser: ResultSetParser[R], typeTraits: TypeTraits, val paramsDefs: ParamsDef[_]*)
   extends UntypedFunction[R](parser) with TypedCallable[R] {
-
-  def resultType: TypeTraits = tp.typeTraits
+  def resultType: TypeTraits = typeTraits
   def resultColumnsNames: Option[IndexedSeq[String]] = parser.expectedColumnsNames
 }
 
-final case class Function0[R](parser: ResultSetParser[R])(implicit classTag: ClassTag[R], tp: TypeProvider[R])
-  extends AbstractTypedFunction[R](parser) {
+class Function0[R] private(parser: ResultSetParser[R], typeTraits: TypeTraits)
+  extends AbstractTypedFunction[R](parser, typeTraits) {
 
-  def apply()(implicit c: Connection): Future[R] = call()
+  def apply()(implicit c: Connection): Future[R] =
+    call()
 
-  def mapWith[RR](mapper: R => RR)(implicit ct: ClassTag[RR], tp: TypeProvider[RR]) = Function0(parser.mapWith(mapper))
+  def mapWith[RR](mapper: R => RR): Function0[RR] =
+    new Function0(parser.mapWith(mapper), typeTraits)
 }
 
-final case class Function1[R, T1](parser: ResultSetParser[R], _1: ParamsDef[T1])
-    (implicit classTag: ClassTag[R], tp: TypeProvider[R])
-  extends AbstractTypedFunction[R](parser, _1) {
-
-  def apply(v1: T1)(implicit c: Connection): Future[R] = call(_1.encodeParam(v1))
-
-  def mapWith[RR](mapper: R => RR)(implicit ct: ClassTag[RR], tp: TypeProvider[RR]) =
-    Function1(parser.mapWith(mapper), _1)
+object Function0 {
+  def apply[R](resultSetParser: ResultSetParser[R])(implicit tp: TypeProvider[R]) =
+    new Function0(resultSetParser, tp.typeTraits)
 }
 
-final case class Function2[R, T1, T2](parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2])
-    (implicit classTag: ClassTag[R], tp: TypeProvider[R])
-  extends AbstractTypedFunction[R](parser, _1, _2) {
+class Function1[R, T1] private(parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1])
+  extends AbstractTypedFunction[R](parser, typeTraits, _1) {
+
+  def apply(v1: T1)(implicit c: Connection): Future[R] =
+    call(_1.encodeParam(v1))
+
+  def mapWith[RR](mapper: R => RR): Function1[RR, T1] =
+    new Function1(parser.mapWith(mapper), typeTraits, _1)
+}
+
+object Function1 {
+  def apply[R, T1](parser: ResultSetParser[R], _1: ParamsDef[T1])(implicit tp: TypeProvider[R]) =
+    new Function1(parser, tp.typeTraits, _1)
+}
+
+class Function2[R, T1, T2] private
+  (parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1], _2: ParamsDef[T2])
+    extends AbstractTypedFunction[R](parser, typeTraits, _1, _2) {
 
   def apply(v1: T1, v2: T2)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2))
 
-  def mapWith[RR](mapper: R => RR)(implicit ct: ClassTag[RR], tp: TypeProvider[RR]) =
-    Function2(parser.mapWith(mapper), _1, _2)
+  def mapWith[RR](mapper: R => RR): Function2[RR, T1, T2] =
+    new Function2(parser.mapWith(mapper), typeTraits, _1, _2)
 }
 
-final case class Function3[R, T1, T2, T3](parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
-    (implicit classTag: ClassTag[R], tp: TypeProvider[R])
-  extends AbstractTypedFunction[R](parser, _1, _2, _3) {
+object Function2 {
+  def apply[R, T1, T2](parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[R]) =
+    new Function2(parser, tp.typeTraits, _1, _2)
+}
+
+class Function3[R, T1, T2, T3] private
+  (parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    extends AbstractTypedFunction[R](parser, typeTraits, _1, _2, _3) {
 
   def apply(v1: T1, v2: T2, v3: T3)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2), _3.encodeParam(v3))
 
-  def mapWith[RR](mapper: R => RR)(implicit ct: ClassTag[RR], tp: TypeProvider[RR]) =
-    Function3(parser.mapWith(mapper), _1, _2, _3)
+  def mapWith[RR](mapper: R => RR): Function3[RR, T1, T2, T3] =
+    new Function3(parser.mapWith(mapper), typeTraits, _1, _2, _3)
+}
+
+object Function3 {
+  def apply[R, T1, T2, T3](parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[R]) =
+      new Function3(parser, tp.typeTraits, _1, _2, _3)
 }
 
 

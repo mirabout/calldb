@@ -45,14 +45,14 @@ class TypedCallableTest extends Specification with RoutineTestSupport {
   "TypedCallable" should {
     "build procedure call string for case when procedure result type is a scalar" in {
       val callable = new DummyTypedCallable[Int]("Dummy", implicitly[ColumnTypeProvider[Int]].typeTraits)
-      callable.buildCallSql() must_== "SELECT Dummy()"
+      callable.buildCallSql() must_== "select Dummy()"
     }
 
     "build procedure call string for case when procedure result type is a (compound) row" in {
       val intTypeProvider = implicitly[ColumnTypeProvider[Int]]
       val typeProvider = tuple2TypeProvider[Int, Int](intTypeProvider, intTypeProvider)
       val callable = new DummyTypedCallable[(Int, Int)]("Dummy", typeProvider.typeTraits)
-      callable.buildCallSql() must_== "SELECT * FROM Dummy()"
+      callable.buildCallSql() must_== "select * from Dummy()"
     }
   }
 }
@@ -111,7 +111,7 @@ class Procedure4Test extends Specification with RoutineTestSupport {
 class Function0Test extends Specification with RoutineTestSupport {
   "Function0" should {
     "allow to be called with no args for a parsed result set" in new WithRoutinesTestDatabaseEnvironment {
-      val function: Function0[IndexedSeq[Int]] = (new Function0(RowDataParser.int(0).*)).withName("DummyFunction0")
+      val function: Function0[IndexedSeq[Int]] = (Function0(RowDataParser.int(0).*)).withName("DummyFunction0")
       val integerOid = PgType.Integer.getOrFetchOid().get.exactOid
       // This function returns OIDs of all registered PostgreSQL types
       awaitResult(function()).toSet must contain(integerOid)
@@ -135,7 +135,7 @@ class Function2Test extends Specification with RoutineTestSupport {
     "allow to be called with 2 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function multiplies two given Double's and returns result as a Double
       val function: Function2[Double, Double, Double] =
-        (new Function2(RowDataParser.double(0).!, double("arg0"), double("arg1"))).withName("DummyFunction2")
+        (Function2(RowDataParser.double(0).!, double("arg0"), double("arg1"))).withName("DummyFunction2")
       awaitResult(function.apply(6.0, 8.0)) must_=== 48.0
     }
   }
@@ -146,7 +146,7 @@ class Function3Test extends Specification with RoutineTestSupport {
     "allow to be called with 3 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function clamps arg0 using [arg1, arg2] bounds and returns result as a Double
       val function: Function3[Double, Double, Double, Double] =
-        (new Function3(RowDataParser.double(0).!, double("arg0"), double("arg1"), double("arg2")))
+        (Function3(RowDataParser.double(0).!, double("arg0"), double("arg1"), double("arg2")))
           .withName("DummyFunction3")
 
       awaitResult(function.apply(1.0, 2.0, 3.0)) must_=== 2.0

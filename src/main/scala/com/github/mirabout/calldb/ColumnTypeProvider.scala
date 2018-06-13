@@ -183,3 +183,5 @@ trait ColumnTypeProviders extends BugReporting {
     val typeTraits = ScalarTypeTraits(classOf[Map[_,_]], PgType.Hstore)
   }
 }
+
+private[calldb] object ColumnTypeProviders extends ColumnTypeProviders
