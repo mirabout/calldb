@@ -145,7 +145,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       "reject procedures that can't be found by name in database" in new WithTestEnvironment {
         val dummyProcedure = Procedure0().withMemberName("pDummy")
         val checker = newChecker()
-        val expectedError = checker.errorProcedureDoesNotHaveItsCounterpart("pDummy_Dummy")
+        val expectedError = checker.errorProcedureDoesNotHaveItsCounterpart("pdummy_dummy")
         val checkResult = checker.checkProcedure(dummyProcedure, databaseProcedures = Map.empty[String, DbProcedureDef])
         checkResult.map(_.toSet) must_== Some(Set(expectedError))
       }

@@ -522,7 +522,7 @@ class TableProceduresChecker(tableName: TableName)(implicit c: Connection) exten
     if (!procedure.nameAsMember.startsWith("p"))
       return Some(Seq(errorProcedureNameAsMemberMustStartWithP(procedure.nameAsMember)))
 
-    val qualifiedName = procedure.mkQualifiedName(tableName.withoutPrefix)
+    val qualifiedName = procedure.mkQualifiedName(tableName.withoutPrefix).toLowerCase()
     databaseProcedures.get(qualifiedName) match {
       case None =>
         Some(Seq(errorProcedureDoesNotHaveItsCounterpart(qualifiedName)))
