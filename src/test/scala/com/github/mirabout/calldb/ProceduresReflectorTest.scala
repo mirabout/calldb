@@ -17,15 +17,15 @@ class ProceduresReflectorTest extends Specification {
   }
 
   trait BaseTable2 extends ColumnReaders with ColumnWriters with ColumnTypeProviders {
-    lazy val pBaseFunction0 = Function0(RowDataParser.string(0).*)
-    lazy val pBaseFunction2 = Function2(RowDataParser.double(0).*, Param('first, ""), Param('second, ""))
+    lazy val pBaseFunction0 = Function0(RowDataParser.string(0).seq)
+    lazy val pBaseFunction2 = Function2(RowDataParser.double(0).seq, Param('first, ""), Param('second, ""))
 
     def routines: Set[ProceduresReflector.DefinedProcedure[_]] =
       Set(pBaseFunction0, pBaseFunction2)
   }
 
   class DummyTable1 extends BaseTable1 with BaseTable2 {
-    lazy val pDummyFunction1 = Function1(RowDataParser.stringKVMap(0).*, Param('id, UUID.randomUUID()))
+    lazy val pDummyFunction1 = Function1(RowDataParser.stringKVMap(0).seq, Param('id, UUID.randomUUID()))
 
     override lazy val routines: Set[ProceduresReflector.DefinedProcedure[_]] =
       super[BaseTable1].routines ++ super[BaseTable2].routines ++ Set(pDummyFunction1)

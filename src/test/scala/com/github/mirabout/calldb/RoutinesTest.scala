@@ -5,6 +5,8 @@ import org.specs2.mutable._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
+import RowDataParser.returns
+
 trait RoutineTestSupport extends ColumnReaders with ColumnWriters with ColumnTypeProviders {
 
   implicit class ExplicitlyNamedRoutine[Routine <: UntypedRoutine](routine: Routine) {
@@ -101,7 +103,7 @@ class Procedure3Test extends Specification with RoutineTestSupport {
 class Procedure4Test extends Specification with RoutineTestSupport {
   "Procedure4" should {
     "allow to be called with 4 args for a Long result" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = new Procedure4(int("arg0"), int("arg1"), int("arg2"), int("arg3")).withName("DummyProcedure4")
+      val procedure = Procedure4(int("arg0"), int("arg1"), int("arg2"), int("arg3")).withName("DummyProcedure4")
       // This procedure does not do any actual work and returns a dummy value "4"
       awaitResult(procedure.apply(0, 0, 0, 0)) must_=== 4L
     }
@@ -111,7 +113,7 @@ class Procedure4Test extends Specification with RoutineTestSupport {
 class Function0Test extends Specification with RoutineTestSupport {
   "Function0" should {
     "allow to be called with no args for a parsed result set" in new WithRoutinesTestDatabaseEnvironment {
-      val function: Function0[IndexedSeq[Int]] = (Function0(RowDataParser.int(0).*)).withName("DummyFunction0")
+      val function: Function0[IndexedSeq[Int]] = Function0(returns.int(index = 0).seq).withName("DummyFunction0")
       val integerOid = PgType.Integer.getOrFetchOid().get.exactOid
       // This function returns OIDs of all registered PostgreSQL types
       awaitResult(function()).toSet must contain(integerOid)
@@ -124,7 +126,7 @@ class Function1Test extends Specification with RoutineTestSupport {
     "allow to be called with 1 arg for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function returns length of a string as a long value
       val function: Function1[Long, String] =
-        Function1(RowDataParser.long(0).!, str("arg0")).withName("DummyFunction1")
+        Function1(returns.long(index = 0).single, str("arg0")).withName("DummyFunction1")
       awaitResult(function.apply("Hello, world!")) must_=== 13L
     }
   }
@@ -135,7 +137,7 @@ class Function2Test extends Specification with RoutineTestSupport {
     "allow to be called with 2 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function multiplies two given Double's and returns result as a Double
       val function: Function2[Double, Double, Double] =
-        (Function2(RowDataParser.double(0).!, double("arg0"), double("arg1"))).withName("DummyFunction2")
+        Function2(returns.double(index = 0).single, double("arg0"), double("arg1")).withName("DummyFunction2")
       awaitResult(function.apply(6.0, 8.0)) must_=== 48.0
     }
   }
@@ -146,7 +148,7 @@ class Function3Test extends Specification with RoutineTestSupport {
     "allow to be called with 3 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function clamps arg0 using [arg1, arg2] bounds and returns result as a Double
       val function: Function3[Double, Double, Double, Double] =
-        (Function3(RowDataParser.double(0).!, double("arg0"), double("arg1"), double("arg2")))
+        Function3(returns.double(index = 0).single, double("arg0"), double("arg1"), double("arg2"))
           .withName("DummyFunction3")
 
       awaitResult(function.apply(1.0, 2.0, 3.0)) must_=== 2.0

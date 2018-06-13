@@ -186,7 +186,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
           traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("_latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked4"
-        val function = Function1(rowDataParser.*, Param("arg0", 0)).withMemberName(functionName)
+        val function = Function1(rowDataParser.seq, Param("arg0", 0)).withMemberName(functionName)
         val returnTypeChecker = newReturnTypeChecker(function, fetchProcedureDef(functionName))
         val expectedError1 = returnTypeChecker.errorColumnsArePresentOnlyInDB(Seq("latitude"))
         val expectedError2 = returnTypeChecker.errorColumnsArePresentOnlyInCode(Seq("_latitude"))
@@ -198,7 +198,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
           traitsOf[Double], traitsOf[Double], traitsOf[Int])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked4"
-        val function = Function1(rowDataParser.*, Param("arg0", 0)).withMemberName(functionName)
+        val function = Function1(rowDataParser.seq, Param("arg0", 0)).withMemberName(functionName)
         val checker = newReturnTypeChecker(function, fetchProcedureDef(functionName))
         val integerTypeOid = PgType.Integer.getOrFetchOid().get
         val doubleOid = PgType.Double.getOrFetchOid().get.exactOid
@@ -210,7 +210,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](
           traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
-        val function = Function1(rowDataParser.*, Param("arg0", 0))
+        val function = Function1(rowDataParser.seq, Param("arg0", 0))
         newReturnTypeChecker(function, fetchProcedureDef("pDummyTypeChecked4")).result() must beNone
       }
 
@@ -219,7 +219,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
           traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "_altitude")
         val functionName = "pDummyTypeChecked5"
-        val function = Function2(rowDataParser.*, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
+        val function = Function2(rowDataParser.seq, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
         val checker = newReturnTypeChecker(function, fetchProcedureDef(functionName))
         val expectedError1 = checker.errorColumnsArePresentOnlyInDB(Seq("altitude"))
         val expectedError2 = checker.errorColumnsArePresentOnlyInCode(Seq("_altitude"))
@@ -230,7 +230,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](traitsOf[Double], traitsOf[Double], traitsOf[String])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked5"
-        val function = Function2(rowDataParser.*, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
+        val function = Function2(rowDataParser.seq, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
         val checker = newReturnTypeChecker(function, fetchProcedureDef(functionName))
         val textTypeOid = PgType.Text.getOrFetchOid().get
         val doubleOid = PgType.Double.getOrFetchOid().get.exactOid
@@ -242,7 +242,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked5"
-        val function = Function2(rowDataParser.*, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
+        val function = Function2(rowDataParser.seq, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
         newReturnTypeChecker(function, fetchProcedureDef(functionName)).result must beNone
       }
 

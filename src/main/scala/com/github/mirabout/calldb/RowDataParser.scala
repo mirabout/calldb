@@ -27,19 +27,28 @@ abstract class RowDataParser[Row](private[this] val parseFunc: RowData => Row) e
   /**
    * Expects a single row in a query result
    */
-  final def ! : ResultSetParser[Row] = new SingleRowParser[Row](this)
+  final def single : ResultSetParser[Row] = new SingleRowParser[Row](this)
 
   /**
    * Expects an empty query result, or a single row in it
    */
-  final def ? : ResultSetParser[Option[Row]] = new MaybeSingleRowParser[Row](this)
+  final def option : ResultSetParser[Option[Row]] = new MaybeSingleRowParser[Row](this)
 
   /**
    * Expects any count of rows in a query result, empty or some rows
     *
     * @return A [[Seq]] of [[Row]] that may be empty
    */
-  final def * : ResultSetParser[IndexedSeq[Row]] = new RowSeqParser[Row](this)
+  final def seq : ResultSetParser[IndexedSeq[Row]] = new RowSeqParser[Row](this)
+
+  @deprecated("use .single instead", "0.0.17")
+  final def ! : ResultSetParser[Row] = single
+
+  @deprecated("use .option instead", "0.0.17")
+  final def ? : ResultSetParser[Option[Row]] = option
+
+  @deprecated("use .seq instead", "0.0.17")
+  final def * : ResultSetParser[IndexedSeq[Row]] = seq
 
   final def zip[B](that: RowDataParser[B]): RowDataParser[(Row, B)] = RowDataParser.zip(this, that)
 
@@ -68,16 +77,25 @@ object RowDataParser extends BugReporting {
   private def indexed[A: ClassTag](index: Int) = new SingleColumnCastIndexedParser[A](index)
   private def named[A : ClassTag](name: String) = new SingleColumnCastNamedParser[A](name.toLowerCase)
 
+  @deprecated("use boolean() instead", "0.0.17")
   def bool(name: String) = named[Boolean](name)
+  @deprecated("use boolean() instead", "0.0.17")
   def bool(index: Int) = indexed[Boolean](index)
-  def int(name: String) = named[Int](name)
-  def int(index: Int) = indexed[Int](index)
-  def long(name: String) = named[Long](name)
-  def long(index: Int) = indexed[Long](index)
-  def double(name: String) = named[Double](name)
-  def double(index: Int) = indexed[Double](index)
-  def string(name: String) = named[String](name)
-  def string(index: Int) = indexed[String](index)
+
+  def boolean(name: String): RowDataParser[Boolean] = named[Boolean](name)
+  def boolean(index: Int): RowDataParser[Boolean] = indexed[Boolean](index)
+
+  def int(name: String): RowDataParser[Int] = named[Int](name)
+  def int(index: Int): RowDataParser[Int] = indexed[Int](index)
+
+  def long(name: String): RowDataParser[Long] = named[Long](name)
+  def long(index: Int): RowDataParser[Long] = indexed[Long](index)
+
+  def double(name: String): RowDataParser[Double] = named[Double](name)
+  def double(index: Int): RowDataParser[Double] = indexed[Double](index)
+
+  def string(name: String): RowDataParser[String] = named[String](name)
+  def string(index: Int): RowDataParser[String] = indexed[String](index)
 
   def stringKVMap(name: String): RowDataParser[Map[String, Option[String]]] =
     new SingleColumnNamedParser[Map[String, Option[String]]](name)(row => parseHStore(row(name.toLowerCase))) {}
@@ -100,33 +118,79 @@ object RowDataParser extends BugReporting {
   def uuid(index: Int): RowDataParser[UUID] =
     new SingleColumnIndexedParser[UUID](index)(row => parseUuid(row.apply(index))) {}
 
-  def zip[A, B](parserA: RowDataParser[A], parserB: RowDataParser[B]): RowDataParser[(A, B)] = {
-    new RowDataParser[(A, B)](row => (parserA.ofRow(row), parserB.ofRow(row))) {
-      val expectedColumnsNames: Option[IndexedSeq[String]] = {
-        def failOnAbsentNames(token: RowDataParser[_]) = BUG(
-          s"Can't merge column names for a zipped parser: " +
-          s"names for parser $token are absent, names for other one are present")
-        (parserA.expectedColumnsNames, parserB.expectedColumnsNames) match {
-          case (Some(namesA), Some(namesB)) => {
-            val mergedNames = (namesA ++ namesB).map(_.toLowerCase)
-            if (mergedNames.toSet.size != mergedNames.size) {
-              BUG(s"Can't merge column names for $parserA ($namesA) and $parserB ($namesB): duplicate names exist")
-            }
-            Some(mergedNames)
-          }
-          case (Some(namesA), None) => failOnAbsentNames(parserB)
-          case (None, Some(namesB)) => failOnAbsentNames(parserA)
-          case (None, None) => None
-        }
+  private class ZippedParser[A, B](parserA: RowDataParser[A], parserB: RowDataParser[B])
+    extends RowDataParser[(A, B)](row => (parserA.ofRow(row), parserB.ofRow(row))) {
+
+    private def failOnAbsentNames(token: RowDataParser[_]) = BUG(
+      s"Can't merge column names for a zipped parser: " +
+      s"names for parser $token are absent, names for other one are present")
+
+    private def mergeNames(namesA: IndexedSeq[String], namesB: IndexedSeq[String]) = {
+      val mergedNames = (namesA ++ namesB).map(_.toLowerCase)
+      if (mergedNames.toSet.size != mergedNames.size) {
+        BUG(s"Can't merge column names for $parserA ($namesA) and $parserB ($namesB): duplicate names exist")
       }
+      Some(mergedNames)
     }
+
+    private def getExpectedColumnNames = (parserA.expectedColumnsNames, parserB.expectedColumnsNames) match {
+      case (Some(namesA), Some(namesB)) =>
+        mergeNames(namesA, namesB)
+      case (Some(_), None) =>
+        failOnAbsentNames(parserB)
+      case (None, Some(_)) =>
+        failOnAbsentNames(parserA)
+      case (None, None) =>
+        None
+    }
+
+    override val expectedColumnsNames: Option[IndexedSeq[String]] = getExpectedColumnNames
   }
+
+  def zip[A, B](parserA: RowDataParser[A], parserB: RowDataParser[B]): RowDataParser[(A, B)] =
+    new ZippedParser(parserA, parserB)
 
   def map[A, B](parser: RowDataParser[A], mapper: A => B): RowDataParser[B] = {
     new RowDataParser[B](row => mapper.apply(parser.ofRow(row))) {
       val expectedColumnsNames: Option[IndexedSeq[String]] = parser.expectedColumnsNames
     }
   }
+
+  /**
+    * Might be extended for custom types
+    */
+  trait returns {
+    def boolean(name: String): RowDataParser[Boolean] = RowDataParser.boolean(name)
+    def boolean(index: Int): RowDataParser[Boolean] = RowDataParser.boolean(index)
+
+    def int(name: String): RowDataParser[Int] = RowDataParser.int(name)
+    def int(index: Int): RowDataParser[Int] = RowDataParser.int(index)
+
+    def long(name: String): RowDataParser[Long] = RowDataParser.long(name)
+    def long(index: Int): RowDataParser[Long] = RowDataParser.long(index)
+
+    def double(name: String): RowDataParser[Double] = RowDataParser.double(name)
+    def double(index: Int): RowDataParser[Double] = RowDataParser.double(index)
+
+    def string(name: String): RowDataParser[String] = RowDataParser.string(name)
+    def string(index: Int): RowDataParser[String] = RowDataParser.string(index)
+
+    def stringKVMap(name: String): RowDataParser[Map[String, Option[String]]] =
+      RowDataParser.stringKVMap(name)
+    def stringKVMap(index: Int): RowDataParser[Map[String, Option[String]]] =
+      RowDataParser.stringKVMap(index)
+
+    def uuid(name: String): RowDataParser[UUID] = RowDataParser.uuid(name)
+    def uuid(index: Int): RowDataParser[UUID] = RowDataParser.uuid(index)
+
+    def apply[R](parser: RowDataParser[R]): RowDataParser[R] = parser
+  }
+
+  /**
+    * A default instance of the corresponding trait that allows
+    * a fluent specification of database function return types
+    */
+  object returns extends returns
 }
 
 /**
