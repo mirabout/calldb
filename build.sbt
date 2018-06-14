@@ -1,6 +1,6 @@
 name := "calldb"
 
-version := "0.0.19"
+version := "0.0.20"
 
 scalaVersion := "2.11.8"
 

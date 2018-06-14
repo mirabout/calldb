@@ -62,7 +62,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   protected def mkRowParser(parseFunc: RowData => E): RowDataParser[E] = {
     new RowDataParser[E](parseFunc) {
-      override def expectedColumnsNames: Option[IndexedSeq[String]] = Some(allColumns.map(_.name))
+      override def expectedColumnsNames: Option[IndexedSeq[String]] = Some(allColumns.map(_.columnLabel))
     }
   }
 
