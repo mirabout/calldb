@@ -20,7 +20,10 @@ abstract class RowDataParser[Row](private[this] val parseFunc: RowData => Row) e
    * @param row Query result row
    * @return extracted [[Row]] entity
    */
-  def ofRow(row: RowData): Row = parseFunc.apply(row)
+  def fromRow(row: RowData): Row = parseFunc.apply(row)
+
+  @deprecated("use fromRow() instead", "0.0.19")
+  def ofRow(row: RowData): Row = fromRow(row)
 
   override def apply(row: RowData) = parseFunc.apply(row)
 
@@ -119,7 +122,7 @@ object RowDataParser extends BugReporting {
     new SingleColumnIndexedParser[UUID](index)(row => parseUuid(row.apply(index))) {}
 
   private class ZippedParser[A, B](parserA: RowDataParser[A], parserB: RowDataParser[B])
-    extends RowDataParser[(A, B)](row => (parserA.ofRow(row), parserB.ofRow(row))) {
+    extends RowDataParser[(A, B)](row => (parserA.fromRow(row), parserB.fromRow(row))) {
 
     private def failOnAbsentNames(token: RowDataParser[_]) = BUG(
       s"Can't merge column names for a zipped parser: " +
@@ -151,7 +154,7 @@ object RowDataParser extends BugReporting {
     new ZippedParser(parserA, parserB)
 
   def map[A, B](parser: RowDataParser[A], mapper: A => B): RowDataParser[B] = {
-    new RowDataParser[B](row => mapper.apply(parser.ofRow(row))) {
+    new RowDataParser[B](row => mapper.apply(parser.fromRow(row))) {
       val expectedColumnsNames: Option[IndexedSeq[String]] = parser.expectedColumnsNames
     }
   }
