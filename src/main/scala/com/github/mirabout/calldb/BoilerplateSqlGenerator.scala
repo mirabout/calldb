@@ -53,6 +53,29 @@ trait StatementsGenerator {
   protected def dropSqlImpl: String = null
 }
 
+object StatementsGenerator {
+  /**
+    * A helper for avoiding manual subclassing of [[StatementsGenerator]] trait.
+    * @param create an expression producing "create" SQL statement
+    * @param drop an expression producing "drop" SQL statement
+    * @return a new [[StatementsGenerator]] that yields supplied statements
+    */
+  def apply(create: => String, drop: => String): StatementsGenerator = {
+    new StatementsGenerator {
+      override def createSqlImpl: String = getCheckingTokens(create, "create")
+      override def dropSqlImpl: String = getCheckingTokens(drop, "drop")
+
+      private def getCheckingTokens(sql: String, tokens: String*): String = {
+        val lowercaseSql = sql.toLowerCase()
+        if (!tokens.forall(t => lowercaseSql.contains(t.toLowerCase))) {
+          throw new AssertionError(s"Some of $tokens are missing in $sql. Did you confuse create and drop statements?")
+        }
+        lowercaseSql
+      }
+    }
+  }
+}
+
 /**
   * A container for instances of [[StatementsGenerator]] that adds a description
   * and allows ordering of generators to manually resolve generator dependencies.
@@ -83,6 +106,21 @@ class StatementsGeneratorProps(val description: String, generator_ : => Statemen
   def createOrReplaceSql: Option[String] = generator.createOrReplaceSql
   def dropSql: Option[String] = generator.dropSql
   def dropIfExistsSql: Option[String] = generator.dropIfExistsSql
+}
+
+object StatementsGeneratorProps {
+  /**
+    * A helper for [[StatementsGeneratorProps]] instances creation
+    * (The class can't and shouldn't be defined as a case class)
+    */
+  def apply(description: String, generator: => StatementsGenerator, order: Int): StatementsGeneratorProps =
+    new StatementsGeneratorProps(description, generator, order)
+
+  /**
+    * @note it has been found to be useful
+    */
+  def apply(descriptionAndGenerator: (String, () => StatementsGenerator), order: Int): StatementsGeneratorProps =
+    new StatementsGeneratorProps(descriptionAndGenerator._1, descriptionAndGenerator._2(), order)
 }
 
 /**
