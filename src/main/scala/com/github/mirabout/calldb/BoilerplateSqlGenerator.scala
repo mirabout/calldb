@@ -23,17 +23,18 @@ trait StatementsGenerator {
     * @return A SQL statement for a database entity CREATE OR REPLACE statement if it can be and is defined
     */
   def createOrReplaceSql: Option[String] = createSql map { sql =>
-    if (sql.indexOf("create ") != 0) {
-      throw new AssertionError(s"The given SQL string `$sql` does not start with `create `")
+    val trimmed = sql.trim()
+    if (trimmed.indexOf("create ") != 0) {
+      throw new AssertionError(s"The given SQL string `$trimmed` does not start with `create `")
     }
-    "create or replace " + sql.drop("create ".length)
+    "create or replace " + trimmed.drop("create ".length)
   }
 
   /**
     * @return A SQL statement for a database entity DROP IF EXISTS statement if it can be and is defined
     */
   def dropIfExistsSql: Option[String] = dropSql map { sql =>
-    val matcher = Pattern.compile("drop\\s+\\b\\w+\\b\\s+").matcher(sql)
+    val matcher = Pattern.compile("\\s*drop\\s+\\b\\w+\\b\\s+").matcher(sql)
     if (!matcher.find()) {
       throw new AssertionError(s"Can't find the `drop <token> ` pattern at the start of the given SQL string `$sql`")
     }
