@@ -161,7 +161,7 @@ final class TableColumn[E, C](
     * @inheritdoc
     */
   override def encodeParam(value: C, output: StringAppender): Unit = {
-    output += name += ":="
+    output += name += "_ :="
     PostgreSQLScalarValueEncoder.encodeValue(value, output)
   }
 

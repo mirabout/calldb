@@ -141,6 +141,7 @@ sealed trait TypedCallable[R] { self: UntypedRoutine =>
     appender += (if (resultType.isBasic) "select " else "select * from ")
     appender += nameInDatabase
     appendSqlCallArgs(appender, args :_*)
+    println(appender.result())
     appender.result()
   }
 }

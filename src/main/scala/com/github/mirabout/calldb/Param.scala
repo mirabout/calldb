@@ -15,7 +15,7 @@ object Param {
 private class NonColumnParamDef[A](val name: String)(implicit tp: ColumnTypeProvider[A], w: ColumnWriter[A])
   extends TypedCallable.ParamsDef[A] {
   override def encodeParam(value: A, output: StringAppender): Unit = {
-    output += name += ":="
+    output += name += "_ :="
     PostgreSQLScalarValueEncoder.encodeValue(w.write(value), output)
   }
   override val typeTraits: BasicTypeTraits = tp.typeTraits

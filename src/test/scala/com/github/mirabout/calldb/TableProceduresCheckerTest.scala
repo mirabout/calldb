@@ -65,7 +65,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         def1.allArgTypes must_=== IndexedSeq()
         def1.argTypes must_=== IndexedSeq(PgType.Integer.pgNumericOid.get)
         def1.argModes must_=== IndexedSeq()
-        def1.argNames must_=== IndexedSeq("arg0")
+        def1.argNames must_=== IndexedSeq("arg0_")
         def1.retType must_=== PgType.Bigint.pgNumericOid.get
 
         // create function pDummyTypeChecked2(entity GeoPoint) returns bigint
@@ -91,7 +91,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
           PgType.Integer, PgType.Double, PgType.Double, PgType.Double).flatMap(_.pgNumericOid)
         def4.argTypes must_=== IndexedSeq(PgType.Integer.pgNumericOid.get)
         def4.argModes must_=== IndexedSeq(DbArgMode.In, DbArgMode.Table, DbArgMode.Table, DbArgMode.Table)
-        def4.argNames must_=== IndexedSeq("arg0", "latitude", "longitude", "altitude")
+        def4.argNames must_=== IndexedSeq("arg0_", "latitude", "longitude", "altitude")
 
         // create function pDummyTypeChecked5(arg0 integer, arg1 integer) returns setof GeoPoint3D
         defs.isDefinedAt("pDummyTypeChecked5".toLowerCase) must beTrue
@@ -99,7 +99,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         def5.allArgTypes must_=== IndexedSeq()
         def5.argTypes must_=== IndexedSeq(PgType.Integer, PgType.Integer).flatMap(_.pgNumericOid)
         def5.argModes must_=== IndexedSeq()
-        def5.argNames must_=== IndexedSeq("arg0", "arg1")
+        def5.argNames must_=== IndexedSeq("arg0_", "arg1_")
       }
 
       "provide fetchUserDefinedCompoundTypes() object method" in new WithTestEnvironment {

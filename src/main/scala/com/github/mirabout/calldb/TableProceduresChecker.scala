@@ -447,8 +447,18 @@ class ProcedureChecker(tableName: TableName, procedure: DefinedProcedure[_], dbD
   private[calldb] def errorDBArgsCountDoesNotMatchCodeOne(): String =
     mkError(s"DB args count ${dbDef.argTypes.size} does not match code one ${procedure.paramsDefs.size}")
 
-  private[calldb] def errorParamCodeNameDoesNotMatchDBName(param: Int, codeName: String, dbName: String): String =
-    mkError(s"Param $param: code name $codeName does not match DB name $dbName")
+  private[calldb] def errorBasicParamNameMismatch(param: Int, codeName: String, dbName: String): String = {
+    mkError(
+      s"A code parameter name `$codeName` does not match the database name `$dbName` " +
+      s"(a code parameter name gets prefixed by an underscore " +
+      s"while calling procedures for basic (scalar/array of scalars) types)")
+  }
+
+  private[calldb] def errorCompoundParamNameMismatch(param: Int, codeName: String, dbName: String): String = {
+    mkError(
+      s"A code parameter name `$codeName` does not match the database name `$dbName` " +
+      s"(an exact match is expected for parameters of compound (records/tables and their arrays) types)")
+  }
 
   def result(): Result = {
     val accumErrors = new mutable.ArrayBuffer[String]
@@ -471,8 +481,13 @@ class ProcedureChecker(tableName: TableName, procedure: DefinedProcedure[_], dbD
           accumErrors ++= errors
         case None =>
           val (codeName, dbName) = (paramDef.name, dbDef.argNames(i))
-          if (!codeName.equalsIgnoreCase(dbName))
-            accumErrors += errorParamCodeNameDoesNotMatchDBName(i, codeName, dbName)
+          if (paramDef.typeTraits.isBasic) {
+            if (s"${codeName}_".toLowerCase() != dbName.toLowerCase()) {
+              accumErrors += errorBasicParamNameMismatch(i, codeName, dbName)
+            }
+          } else if (codeName.toLowerCase() != dbName.toLowerCase()) {
+            accumErrors += errorCompoundParamNameMismatch(i, codeName, dbName)
+          }
       }
     }
     if (accumErrors.nonEmpty) Some(accumErrors) else None
