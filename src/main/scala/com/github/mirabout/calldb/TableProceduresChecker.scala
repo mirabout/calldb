@@ -100,6 +100,7 @@ private[calldb] trait ProcedureCheckSupport {
        |  AND a.attnum > 0
        |  AND a.attrelid = c.oid
        |  AND a.attrelid = t.typrelid
+       |  AND a.atttypid > 0
        |ORDER BY a.attnum
      """.stripMargin
 
