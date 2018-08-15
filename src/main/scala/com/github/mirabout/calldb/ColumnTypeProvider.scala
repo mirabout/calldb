@@ -1,6 +1,7 @@
 package com.github.mirabout.calldb
 
 import scala.reflect.ClassTag
+import scala.collection.mutable
 
 sealed abstract class TypeTraits {
   def isBasic: Boolean = false
@@ -45,14 +46,72 @@ sealed abstract class CompoundTypeTraits extends TypeTraits {
   def columnsTraits: IndexedSeq[BasicTypeTraits]
 }
 
+class CompoundTypeTraitsCompanion[T <: CompoundTypeTraits](constructor: IndexedSeq[BasicTypeTraits] => T) {
+  def apply(args: TypeTraits*): T = {
+    val (basic, compound) = args.partition(_.isBasic)
+    if (compound.nonEmpty) {
+      throw new AssertionError(s"There are compound traits $compound. Only basic type traits are allowed as arguments")
+    }
+    constructor(basic.toIndexedSeq.asInstanceOf[IndexedSeq[BasicTypeTraits]])
+  }
+}
+
 final case class RowTypeTraits(columnsTraits: IndexedSeq[BasicTypeTraits]) extends CompoundTypeTraits
+object RowTypeTraits extends CompoundTypeTraitsCompanion[RowTypeTraits](args => new RowTypeTraits(args))
+
 final case class OptRowTypeTraits(columnsTraits: IndexedSeq[BasicTypeTraits]) extends CompoundTypeTraits
+object OptRowTypeTraits extends CompoundTypeTraitsCompanion[OptRowTypeTraits](args => new OptRowTypeTraits(args))
+
 final case class RowSeqTypeTraits(rowTypeTraits: RowTypeTraits) extends CompoundTypeTraits {
   def columnsTraits: IndexedSeq[BasicTypeTraits] = rowTypeTraits.columnsTraits
 }
 
+object RowSeqTypeTraits extends CompoundTypeTraitsCompanion[RowSeqTypeTraits](args =>
+  new RowSeqTypeTraits(new RowTypeTraits(args)))
+
 trait TypeProvider[A] {
   val typeTraits: TypeTraits
+}
+
+object TypeProvider {
+  /**
+    * Creates a [[TypeProvider]] for a single row that has traits of type [[RowTypeTraits]]
+    * constructed based on the supplied list of type providers
+    * (that are expected to have basic type traits).
+    * @tparam A an expected generic type parameter for the provider ([[Nothing]] if not specified)
+    */
+  def forRow[A](args: TypeProvider[_]*): TypeProvider[A] =
+    forCompoundTraits[A](RowTypeTraits(args map (_.typeTraits) :_*))
+
+  /**
+    * Creates a [[TypeProvider]] for an optional row that has traits of type [[OptRowTypeTraits]]
+    * constructed based on the supplied list of type providers
+    * (that are expected to have basic type traits).
+    * @tparam A an expected generic type parameter for the provider ([[Nothing]] if not specified)
+    */
+  def forOptRow[A](args: TypeProvider[_]*): TypeProvider[A] =
+    forCompoundTraits[A](OptRowTypeTraits(args map (_.typeTraits) :_*))
+
+  /**
+    * Creates a [[TypeProvider]] for an sequence of rows that has traits of type [[RowSeqTypeTraits]]
+    * constructed based on the supplied list of type providers
+    * (that are expected to have basic type traits).
+    * @tparam A an expected generic type parameter for the provider ([[Nothing]] if not specified)
+    */
+  def forRowSeq[A](args: TypeProvider[_]*): TypeProvider[A] =
+    forCompoundTraits[A](RowSeqTypeTraits(args map (_.typeTraits) :_*))
+
+  /**
+    * An utility method that may be imported in a target scope to save typing
+    * @tparam A a type for that a type provider is expected
+    *           (and an implicit provider is visible in the usage scope)
+    */
+  def typeProviderOf[A : TypeProvider]: TypeProvider[A] =
+    implicitly[TypeProvider[A]]
+
+  private def forCompoundTraits[A](traits: CompoundTypeTraits) = new TypeProvider[A] {
+    override val typeTraits: TypeTraits = traits
+  }
 }
 
 trait ColumnTypeProvider[A] extends TypeProvider[A] {

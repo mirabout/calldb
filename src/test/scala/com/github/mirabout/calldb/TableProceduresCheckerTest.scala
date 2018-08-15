@@ -3,6 +3,8 @@ package com.github.mirabout.calldb
 import com.github.mauricio.async.db.Connection
 
 import com.github.mirabout.calldb.ProceduresReflector.DefinedProcedure
+import com.github.mirabout.calldb.TypeProvider.typeProviderOf
+
 import org.specs2.mutable.Specification
 
 class TableProceduresCheckerTest extends Specification with ProcedureCheckSupport
@@ -39,13 +41,6 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
 
   private case class GeoPoint(latitude: Double, longitude: Double)
   private case class GeoPoint3D(latitude: Double, longitude: Double, altitude: Option[Double])
-
-  private def traitsOf[A: ColumnTypeProvider]: BasicTypeTraits =
-    implicitly[ColumnTypeProvider[A]].typeTraits.asOptBasic.get
-
-  private def rowTypeProviderOf[A](traits: BasicTypeTraits*): TypeProvider[A] = new TypeProvider[A] {
-    val typeTraits = RowTypeTraits(traits.toIndexedSeq)
-  }
 
   private def dummyRowParserOf[A](columnsNames: String*): RowDataParser[A] = new RowDataParser[A](row => ???) {
     override def expectedColumnsNames: Option[IndexedSeq[String]] = Some(columnsNames.toIndexedSeq)
@@ -159,7 +154,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       }
 
       "reject procedure if code return type is compound and DB return type is basic" in new WithTestEnvironment {
-        implicit val geoPointTypeProvider = rowTypeProviderOf[GeoPoint](traitsOf[Double], traitsOf[Double])
+        implicit val geoPointTypeProvider = TypeProvider.forRow[GeoPoint](typeProviderOf[Double], typeProviderOf[Double])
         val rowDataParser = dummyRowParserOf[GeoPoint]("latitude", "longitude")
         val functionName = "pDummyTypeChecked1"
         val function = Function0[GeoPoint](rowDataParser.!).withMemberName(functionName)
@@ -182,8 +177,8 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       }
 
       "reject procedure if DB return type is a record and columns names do not match code ones" in new WithTestEnvironment {
-        implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](
-          traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
+        implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
+          typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("_latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked4"
         val function = Function1(rowDataParser.seq, Param("arg0", 0)).withMemberName(functionName)
@@ -194,8 +189,8 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       }
 
       "reject procedure if DB return type is a record and column types for a named column do not match" in new WithTestEnvironment {
-        implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](
-          traitsOf[Double], traitsOf[Double], traitsOf[Int])
+        implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
+          typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[Int])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked4"
         val function = Function1(rowDataParser.seq, Param("arg0", 0)).withMemberName(functionName)
@@ -207,16 +202,16 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       }
 
       "accept procedure return type if DB record return type signature conforms to code one" in new WithTestEnvironment {
-        implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](
-          traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
+        implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
+          typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val function = Function1(rowDataParser.seq, Param("arg0", 0))
         newReturnTypeChecker(function, fetchProcedureDef("pDummyTypeChecked4")).result() must beNone
       }
 
       "reject procedure if DB return type is a relation and column names do not match code ones" in new WithTestEnvironment {
-        implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](
-          traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
+        implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
+          typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "_altitude")
         val functionName = "pDummyTypeChecked5"
         val function = Function2(rowDataParser.seq, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
@@ -227,7 +222,8 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       }
 
       "reject procedure if DB return type is a relation and column types for a named column do not match" in new WithTestEnvironment {
-        implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](traitsOf[Double], traitsOf[Double], traitsOf[String])
+        implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
+          typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[String])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked5"
         val function = Function2(rowDataParser.seq, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
@@ -239,7 +235,8 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       }
 
       "accept procedure return type if DB relation return type signature conforms to code one" in new WithTestEnvironment {
-        implicit val geoPoint3DTypeProvider = rowTypeProviderOf[GeoPoint3D](traitsOf[Double], traitsOf[Double], traitsOf[Option[Double]])
+        implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
+          typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[Option[Double]])
         val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
         val functionName = "pDummyTypeChecked5"
         val function = Function2(rowDataParser.seq, Param("arg0", 0), Param("arg1", 0)).withMemberName(functionName)
