@@ -204,7 +204,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
       "accept procedure return type if DB record return type signature conforms to code one" in new WithTestEnvironment {
         implicit val geoPoint3DTypeProvider = TypeProvider.forRow[GeoPoint3D](
           typeProviderOf[Double], typeProviderOf[Double], typeProviderOf[Option[Double]])
-        val rowDataParser = dummyRowParserOf[GeoPoint3D]("latitude", "longitude", "altitude")
+        val rowDataParser = dummyRowParserOf[GeoPoint3D]("LaTiTuDe", "LoNgItUdE", "AlTiTuDe")
         val function = Function1(rowDataParser.seq, Param("arg0", 0))
         newReturnTypeChecker(function, fetchProcedureDef("pDummyTypeChecked4")).result() must beNone
       }

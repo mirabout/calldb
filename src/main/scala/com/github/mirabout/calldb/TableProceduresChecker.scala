@@ -301,7 +301,7 @@ class ProcedureReturnTypeChecker
     if (procedure.resultColumnsNames.isEmpty) {
       return Some(Seq(errorResultColumnNamesAreNotSpecified()))
     }
-    val codeColumnNames = procedure.resultColumnsNames.get
+    val codeColumnNames = procedure.resultColumnsNames.get.map(_.toLowerCase)
     if (codeTypeTraits.columnsTraits.size != codeColumnNames.size)
       return Some(Seq(errorColumnTraitsSizeDoesNotMatch(codeTypeTraits, codeColumnNames)))
 
