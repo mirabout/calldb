@@ -162,7 +162,8 @@ private[calldb] class DummyTypedCallable[T](name: String, val resultType: TypeTr
 
 sealed abstract class AbstractTypedProcedure[R](val paramsDefs: ParamsDef[_]*)
   extends UntypedProcedure with TypedCallable[R] {
-  override def resultType: TypeTraits = ColumnTypeProviders.longColumnTypeProvider.typeTraits
+  import ColumnTypeProviders._
+  override def resultType: TypeTraits = TypeProvider.typeTraitsOf[Long]
   override def resultColumnsNames: Option[IndexedSeq[String]] = None
 }
 

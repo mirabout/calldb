@@ -6,13 +6,13 @@ package com.github.mirabout.calldb
   * [[TypedCallable.ParamsDef]] instead of heavy-weight and confusing [[TableColumn]]
   */
 object Param {
-  def apply[A](paramName: String, someValueOfType: A)(implicit tp: ColumnTypeProvider[A], w: ColumnWriter[A])
+  def apply[A](paramName: String, someValueOfType: A)(implicit tp: BasicTypeProvider[A], w: ColumnWriter[A])
     : TypedCallable.ParamsDef[A] = new NonColumnParamDef[A](paramName)
-  def apply[A](paramName: Symbol, someValueOfType: A)(implicit tp: ColumnTypeProvider[A], w: ColumnWriter[A])
+  def apply[A](paramName: Symbol, someValueOfType: A)(implicit tp: BasicTypeProvider[A], w: ColumnWriter[A])
     : TypedCallable.ParamsDef[A] = new NonColumnParamDef[A](paramName.name)
 }
 
-private class NonColumnParamDef[A](val name: String)(implicit tp: ColumnTypeProvider[A], w: ColumnWriter[A])
+private class NonColumnParamDef[A](val name: String)(implicit tp: BasicTypeProvider[A], w: ColumnWriter[A])
   extends TypedCallable.ParamsDef[A] {
   override def encodeParam(value: A, output: StringAppender): Unit = {
     output += name += "_ :="

@@ -149,7 +149,7 @@ object TypeProvider {
     * @tparam A a type for that a [[BasicTypeProvider]] is expected
     *           (and an implicit provider is visible in the usage scope)
     */
-  def basicTypeTraitsOf[A: ColumnTypeProvider]: BasicTypeTraits =
+  def basicTypeTraitsOf[A: BasicTypeProvider]: BasicTypeTraits =
     basicTypeProviderOf[A].typeTraits
 
   /**
@@ -180,23 +180,46 @@ trait ColumnTypeProviders extends BugReporting {
   import org.joda.time.{DateTime, LocalDateTime}
   import org.joda.time.{Duration, Period}
 
-  final class ScalarProvider[A](clazz: Class[A], pgType: PgType) extends ColumnTypeProvider[A] {
+  /**
+    * We expose this type as public for optimization purposes.
+    * @todo We need to fix variance so we do not have to widen return type for these type providers below!
+    */
+  final class ScalarTypeProvider[A](clazz: Class[A], pgType: PgType) extends BasicTypeProvider[A] {
     override val typeTraits = ScalarTypeTraits(clazz, pgType)
   }
 
-  implicit final val unitColumnTypeProvider = new ScalarProvider(classOf[Unit], PgType.Void)
-  implicit final val booleanColumnTypeProvider = new ScalarProvider(classOf[Boolean], PgType.Boolean)
-  implicit final val shortColumnTypeProvider = new ScalarProvider(classOf[Short], PgType.Smallint)
-  implicit final val charColumnTypeProvider = new ScalarProvider(classOf[Char], PgType.Char)
-  implicit final val intColumnTypeProvider = new ScalarProvider(classOf[Int], PgType.Integer)
-  implicit final val longColumnTypeProvider = new ScalarProvider(classOf[Long], PgType.Bigint)
-  implicit final val floatColumnTypeProvider = new ScalarProvider(classOf[Float], PgType.Real)
-  implicit final val doubleColumnTypeProvider = new ScalarProvider(classOf[Double], PgType.Double)
-  implicit final val stringColumnTypeProvider = new ScalarProvider(classOf[String], PgType.Text)
-  implicit final val bytesTypeProvider = new ScalarProvider(classOf[Array[Byte]], PgType.Bytea)
-  implicit final val uuidColumnTypeProvider = new ScalarProvider(classOf[UUID], PgType.Uuid)
-  implicit final val dateTimeTypeProvider = new ScalarProvider(classOf[DateTime], PgType.Timestamptz)
-  implicit final val localDateTimeTypeProvider = new ScalarProvider(classOf[LocalDateTime], PgType.Timestamp)
+  implicit final val unitTypeProvider: BasicTypeProvider[Unit] =
+    new ScalarTypeProvider(classOf[Unit], PgType.Void)
+  implicit final val booleanTypeProvider: BasicTypeProvider[Boolean] =
+    new ScalarTypeProvider(classOf[Boolean], PgType.Boolean)
+  implicit final val shortTypeProvider: BasicTypeProvider[Short] =
+    new ScalarTypeProvider(classOf[Short], PgType.Smallint)
+  implicit final val charTypeProvider: BasicTypeProvider[Char] =
+    new ScalarTypeProvider(classOf[Char], PgType.Char)
+  implicit final val intTypeProvider: BasicTypeProvider[Int] =
+    new ScalarTypeProvider(classOf[Int], PgType.Integer)
+  implicit final val longTypeProvider: BasicTypeProvider[Long] =
+    new ScalarTypeProvider(classOf[Long], PgType.Bigint)
+  implicit final val floatTypeProvider: BasicTypeProvider[Float] =
+    new ScalarTypeProvider(classOf[Float], PgType.Real)
+  implicit final val doubleTypeProvider: BasicTypeProvider[Double] =
+    new ScalarTypeProvider(classOf[Double], PgType.Double)
+  implicit final val stringTypeProvider: BasicTypeProvider[String] =
+    new ScalarTypeProvider(classOf[String], PgType.Text)
+  implicit final val bytesTypeProvider: BasicTypeProvider[Array[Byte]] =
+    new ScalarTypeProvider(classOf[Array[Byte]], PgType.Bytea)
+  implicit final val uuidTypeProvider: BasicTypeProvider[UUID] =
+    new ScalarTypeProvider(classOf[UUID], PgType.Uuid)
+  implicit final val dateTimeTypeProvider: BasicTypeProvider[DateTime] =
+    new ScalarTypeProvider(classOf[DateTime], PgType.Timestamptz)
+  implicit final val localDateTimeTypeProvider: BasicTypeProvider[LocalDateTime] =
+    new ScalarTypeProvider(classOf[LocalDateTime], PgType.Timestamp)
+  implicit final val periodTypeProvider: BasicTypeProvider[Period] =
+    new ScalarTypeProvider[Period](classOf[Period], PgType.Bigint)
+  implicit final val durationTypeProvider: BasicTypeProvider[Duration] =
+    new ScalarTypeProvider[Duration](classOf[Duration], PgType.Bigint)
+  implicit final val hStoreTypeProvider: BasicTypeProvider[Map[String, Option[String]]] =
+    new ScalarTypeProvider(classOf[Map[String, Option[String]]], PgType.Hstore)
 
   private def failOnNullElemProvider[A](elemProvider: TypeProvider[A], classTag: ClassTag[A]): Unit = {
     if (elemProvider eq null) {
@@ -207,49 +230,47 @@ trait ColumnTypeProviders extends BugReporting {
     }
   }
 
-  // More generic version
-  implicit final def optionTypeProvider[A](implicit elemProvider: TypeProvider[A], classTag: ClassTag[A] = null): TypeProvider[Option[A]] = {
-    new TypeProvider[Option[A]] {
-      failOnNullElemProvider(elemProvider, classTag)
-      val typeTraits: TypeTraits = {
-        elemProvider.typeTraits match {
-          case bt: BasicTypeTraits => bt.copyWithNullable(nullable = true)
-          case ct: CompoundTypeTraits => ct match {
-            case rt: RowTypeTraits => OptRowTypeTraits(ct.columnsTraits)
-            case ot: OptRowTypeTraits => BUG("Can't make a type traits for option of opt row")
-            case st: RowSeqTypeTraits => BUG("Can't make a type traits for option of seq of rows")
-          }
+  implicit final def optionTypeProvider[A](implicit elemProvider: TypeProvider[A],
+                                           classTag: ClassTag[A] = null)
+  : TypeProvider[Option[A]] = {
+    failOnNullElemProvider(elemProvider, classTag)
+    val typeTraits: TypeTraits = {
+      elemProvider.typeTraits match {
+        case bt: BasicTypeTraits => bt.copyWithNullable(nullable = true)
+        case ct: CompoundTypeTraits => ct match {
+          case rt: RowTypeTraits => OptRowTypeTraits(ct.columnsTraits)
+          case ot: OptRowTypeTraits => BUG("Can't make a type traits for option of opt row")
+          case st: RowSeqTypeTraits => BUG("Can't make a type traits for option of seq of rows")
         }
       }
     }
+    TypeProvider.forTraits(typeTraits)
   }
 
-  implicit final def columnOptionTypeProvider[A](implicit elemProvider: ColumnTypeProvider[A], classTag: ClassTag[A])
-      : ColumnTypeProvider[Option[A]] = {
-    new ColumnTypeProvider[Option[A]] {
-      failOnNullElemProvider(elemProvider, classTag)
-      if (elemProvider.typeTraits.isNullable) {
-        BUG(s"Can't make a type traits for option of option")
-      }
-      val typeTraits: BasicTypeTraits = elemProvider.typeTraits.copyWithNullable(nullable = true)
+  implicit final def basicOptionTypeProvider[A](implicit elemProvider: BasicTypeProvider[A],
+                                                classTag: ClassTag[A])
+  : BasicTypeProvider[Option[A]] = {
+    failOnNullElemProvider(elemProvider, classTag)
+    if (elemProvider.typeTraits.isNullable) {
+      BUG(s"Can't make a type traits for option of option")
     }
+    TypeProvider.forTraits(elemProvider.typeTraits.copyWithNullable(nullable = true))
   }
 
-  final class ArrayLikeTypeProvider[Coll[_], A](elemProvider: ColumnTypeProvider[A]) extends ColumnTypeProvider[Coll[A]] {
+  final class ArrayLikeTypeProvider[Coll[_], A](elemProvider: BasicTypeProvider[A]) extends BasicTypeProvider[Coll[A]] {
     val typeTraits: ArrayTypeTraits = elemProvider.typeTraits.toArrayTypeTraits
   }
 
   // More generic version. We use classTag for debugging only, type gets erased completely
-  implicit final def indexedSeqTypeProvider[A](implicit elemProvider: TypeProvider[A], classTag: ClassTag[A] = null)
-      : TypeProvider[IndexedSeq[A]] = {
+  implicit final def indexedSeqTypeProvider[A](implicit elemProvider: TypeProvider[A],
+                                               classTag: ClassTag[A] = null)
+  : TypeProvider[IndexedSeq[A]] = {
     failOnNullElemProvider(elemProvider, null)
     elemProvider match {
-      case ctp: ColumnTypeProvider[A] => new ArrayLikeTypeProvider(ctp)
+      case ctp: BasicTypeProvider[A] => new ArrayLikeTypeProvider(ctp)
       case _ => elemProvider.typeTraits match {
         case ct: CompoundTypeTraits => ct match {
-          case rt: RowTypeTraits => new TypeProvider[IndexedSeq[A]] {
-            val typeTraits: RowSeqTypeTraits = RowSeqTypeTraits(rt)
-          }
+          case rt: RowTypeTraits => TypeProvider.forTraits(RowSeqTypeTraits(rt))
           case ot: OptRowTypeTraits => BUG("Can't make IndexedSeq type provider for opt row type provider")
           case st: RowSeqTypeTraits => BUG("Can't make IndexedSeq type provider for row seq type provider")
         }
@@ -258,44 +279,54 @@ trait ColumnTypeProviders extends BugReporting {
     }
   }
 
-  implicit final def columnIndexedSeqTypeProvider[A](implicit elemProvider: ColumnTypeProvider[A]): ColumnTypeProvider[IndexedSeq[A]] =
-    new ArrayLikeTypeProvider(elemProvider)
+  implicit final def basicIndexedSeqTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
+    : BasicTypeProvider[IndexedSeq[A]] =
+      new ArrayLikeTypeProvider(elemProvider)
 
-  implicit final def seqTypeProvider[A](implicit elemProvider: TypeProvider[A], d: DummyImplicit, classTag: ClassTag[A] = null): TypeProvider[Seq[A]] =
+  implicit final def seqTypeProvider[A](implicit elemProvider: TypeProvider[A],
+                                        d: DummyImplicit,
+                                        classTag: ClassTag[A] = null)
+  : TypeProvider[Seq[A]] =
     indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Seq[A]]]  // TODO: Check variance to avoid cast?
 
-  implicit final def columnSeqTypeProvider[A](implicit elemProvider: ColumnTypeProvider[A]): ColumnTypeProvider[Seq[A]] =
-    new ArrayLikeTypeProvider(elemProvider)
+  implicit final def basicSeqTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
+    : BasicTypeProvider[Seq[A]] =
+      new ArrayLikeTypeProvider(elemProvider)
 
-  implicit final def setTypeProvider[A](implicit elemProvider: TypeProvider[A], d: DummyImplicit, classTag: ClassTag[A] = null): TypeProvider[Set[A]] =
-    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Set[A]]] // A param type is erased, so the cast is legal
-
-  implicit final def columnSetTypeProvider[A](implicit elemProvider: ColumnTypeProvider[A]): ColumnTypeProvider[Set[A]] =
-    new ArrayLikeTypeProvider(elemProvider)
-
-  implicit final def traversableTypeProvider[A](implicit elemProvider: TypeProvider[A], d: DummyImplicit, classTag: ClassTag[A] = null): TypeProvider[Traversable[A]] =
-    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Traversable[A]]] // Param type is erased, so cast is ok
-
-  implicit final def columnTraversableTypeProvider[A](implicit elemProvider: ColumnTypeProvider[A]): ColumnTypeProvider[Traversable[A]] =
-    new ArrayLikeTypeProvider(elemProvider)
-
-  implicit final def tuple2TypeProvider[A, B](implicit p1: ColumnTypeProvider[A], p2: ColumnTypeProvider[B]): TypeProvider[(A, B)] = {
-    new TypeProvider[(A, B)] {
-      override val typeTraits: RowTypeTraits = RowTypeTraits(IndexedSeq(p1.typeTraits, p2.typeTraits))
-    }
+  implicit final def setTypeProvider[A](implicit elemProvider: TypeProvider[A],
+                                        d: DummyImplicit,
+                                        classTag: ClassTag[A] = null)
+  : TypeProvider[Set[A]] = {
+    // A param type is erased, so the cast is legal
+    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Set[A]]]
   }
 
-  implicit final def tuple3TypeProvider[A, B, C](implicit p1: ColumnTypeProvider[A], p2: ColumnTypeProvider[B], p3: ColumnTypeProvider[C]): TypeProvider[(A, B, C)] = {
-    new TypeProvider[(A, B, C)] {
-      override val typeTraits: RowTypeTraits = RowTypeTraits(IndexedSeq(p1.typeTraits, p2.typeTraits, p2.typeTraits))
-    }
+  implicit final def columnSetTypeProvider[A](implicit elemProvider: BasicTypeProvider[A]): BasicTypeProvider[Set[A]] =
+    new ArrayLikeTypeProvider(elemProvider)
+
+  implicit final def traversableTypeProvider[A](implicit elemProvider: TypeProvider[A],
+                                                d: DummyImplicit,
+                                                classTag: ClassTag[A] = null)
+  : TypeProvider[Traversable[A]] = {
+    // Param type is erased, so cast is ok
+    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Traversable[A]]]
   }
 
-  implicit final val periodTypeProvider = new ScalarProvider[Period](classOf[Period], PgType.Bigint)
-  implicit final val durationTypeProvider = new ScalarProvider[Duration](classOf[Duration], PgType.Bigint)
+  implicit final def columnTraversableTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
+    : BasicTypeProvider[Traversable[A]] =
+      new ArrayLikeTypeProvider(elemProvider)
 
-  implicit final val hStoreTypeProvider = new ColumnTypeProvider[Map[String, Option[String]]] {
-    val typeTraits = ScalarTypeTraits(classOf[Map[_,_]], PgType.Hstore)
+  implicit final def tuple2TypeProvider[A, B](implicit p1: BasicTypeProvider[A],
+                                              p2: BasicTypeProvider[B])
+  : TypeProvider[(A, B)] = {
+    TypeProvider.forTraits(RowTypeTraits(IndexedSeq(p1.typeTraits, p2.typeTraits)))
+  }
+
+  implicit final def tuple3TypeProvider[A, B, C](implicit p1: BasicTypeProvider[A],
+                                                 p2: BasicTypeProvider[B],
+                                                 p3: BasicTypeProvider[C])
+  : TypeProvider[(A, B, C)] = {
+    TypeProvider.forTraits(RowTypeTraits(IndexedSeq(p1.typeTraits, p2.typeTraits, p2.typeTraits)))
   }
 }
 

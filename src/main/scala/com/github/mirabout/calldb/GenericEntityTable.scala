@@ -24,7 +24,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   def column[Column](name: Symbol, extractor: E => Column)(implicit r: ColumnReader[Column],
                                                            w: ColumnWriter[Column],
-                                                           tp: ColumnTypeProvider[Column]) =
+                                                           tp: BasicTypeProvider[Column]) =
     TableColumn.apply(name, extractor, this.tableName.exactName)
 
   protected var _allProcedures: Seq[ProceduresReflector.DefinedProcedure[_]] = null

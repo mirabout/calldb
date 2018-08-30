@@ -113,7 +113,7 @@ final class TableColumn[E, C](
     private[this]  val tableName_          : => Option[String])
     (private[this] implicit val reader     : ColumnReader[C],
     private[this]  implicit val writer     : ColumnWriter[C],
-    private[this]  val columnTypeProvider  : ColumnTypeProvider[C])
+    private[this]  val columnTypeProvider  : BasicTypeProvider[C])
   extends TypedCallable.ParamsDef[C] {
 
   /**
@@ -189,18 +189,18 @@ object TableColumn {
   }
 
   def apply[E, C](name: String, fromEntity: E => C, tableName: => String)
-    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: ColumnTypeProvider[C]): TableColumn[E, C] =
+    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: BasicTypeProvider[C]): TableColumn[E, C] =
       new TableColumn(name, fromEntity, Some(tableName))
 
   def apply[E, C](name: Symbol, fromEntity: E => C, tableName: => String)
-    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: ColumnTypeProvider[C]): TableColumn[E, C] =
+    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: BasicTypeProvider[C]): TableColumn[E, C] =
       new TableColumn(name.name, fromEntity, Some(tableName))
 
   def apply[C](name: String, value: C)
-    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: ColumnTypeProvider[C]): TableColumn[Unit, C] =
+    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: BasicTypeProvider[C]): TableColumn[Unit, C] =
       new TableColumn(name, (_: Unit) => value, None)
 
   def apply[C](name: Symbol, value: C)
-    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: ColumnTypeProvider[C]): TableColumn[Unit, C] =
+    (implicit r: ColumnReader[C], w: ColumnWriter[C], tp: BasicTypeProvider[C]): TableColumn[Unit, C] =
       new TableColumn(name.name, (_: Unit) => value, None)
 }

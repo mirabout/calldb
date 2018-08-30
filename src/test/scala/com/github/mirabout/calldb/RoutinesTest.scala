@@ -6,6 +6,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
 import RowDataParser.returns
+import TypeProvider.{basicTypeProviderOf, basicTypeTraitsOf}
 
 trait RoutineTestSupport extends ColumnReaders with ColumnWriters with ColumnTypeProviders {
 
@@ -23,10 +24,10 @@ trait RoutineTestSupport extends ColumnReaders with ColumnWriters with ColumnTyp
   def double(name: String): TypedCallable.ParamsDef[Double] = Param(name, 0.0)
   def str(name: String): TypedCallable.ParamsDef[String] = Param(name, "")
 
-  def opt[A](paramsDef: TypedCallable.ParamsDef[A])(implicit tp: ColumnTypeProvider[Option[A]], w: ColumnWriter[Option[A]])
+  def opt[A](paramsDef: TypedCallable.ParamsDef[A])(implicit tp: BasicTypeProvider[Option[A]], w: ColumnWriter[Option[A]])
     : TypedCallable.ParamsDef[Option[A]] = Param(paramsDef.name, None.asInstanceOf[Option[A]])
 
-  def seq[A](paramsDef: TypedCallable.ParamsDef[A])(implicit tp: ColumnTypeProvider[Seq[A]], w: ColumnWriter[Seq[A]])
+  def seq[A](paramsDef: TypedCallable.ParamsDef[A])(implicit tp: BasicTypeProvider[Seq[A]], w: ColumnWriter[Seq[A]])
     : TypedCallable.ParamsDef[Seq[A]] = Param(paramsDef.name, Seq().asInstanceOf[Seq[A]])
 
   class WithRoutinesTestDatabaseEnvironment extends WithTestConnectionAndSqlExecuted("RoutinesTest")
@@ -46,12 +47,11 @@ class UntypedRoutineTest extends Specification with RoutineTestSupport {
 class TypedCallableTest extends Specification with RoutineTestSupport {
   "TypedCallable" should {
     "build procedure call string for case when procedure result type is a scalar" in {
-      val callable = new DummyTypedCallable[Int]("Dummy", implicitly[ColumnTypeProvider[Int]].typeTraits)
+      val callable = new DummyTypedCallable[Int]("Dummy", basicTypeTraitsOf[Int])
       callable.buildCallSql() must_== "select Dummy()"
     }
 
     "build procedure call string for case when procedure result type is a (compound) row" in {
-      val intTypeProvider = implicitly[ColumnTypeProvider[Int]]
       val typeProvider = tuple2TypeProvider[Int, Int](intTypeProvider, intTypeProvider)
       val callable = new DummyTypedCallable[(Int, Int)]("Dummy", typeProvider.typeTraits)
       callable.buildCallSql() must_== "select * from Dummy()"
