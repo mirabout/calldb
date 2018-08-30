@@ -109,7 +109,34 @@ object TypeProvider {
   def typeProviderOf[A : TypeProvider]: TypeProvider[A] =
     implicitly[TypeProvider[A]]
 
-  private def forCompoundTraits[A](traits: CompoundTypeTraits) = new TypeProvider[A] {
+  /**
+    * An utility method that follows [[typeProviderOf]] idea
+    * for obtaining [[TypeTraits]] instances for a given type.
+    * @tparam A a type for that a type provider is expected
+    *           (and an implicit provider is visible in the usage scope)
+   */
+  def typeTraitsOf[A: TypeProvider]: TypeTraits =
+    typeProviderOf[A].typeTraits
+
+  /**
+    * An utility method that follows [[typeProviderOf]] idea
+    * for obtaining implicit instances of [[ColumnTypeProvider]] for a given type
+    * @tparam A a type for that a [[ColumnTypeProvider]] is expected
+    *           (and an implicit provider is visible in the usage scope)
+    */
+  def columnTypeProviderOf[A: ColumnTypeProvider]: ColumnTypeProvider[A] =
+    implicitly[ColumnTypeProvider[A]]
+
+  /**
+    * An utility method that follows [[typeProviderOf]] and [[columnTypeProviderOf]] ideas
+    * for obtaining instances of [[BasicTypeTraits]] for a given type.
+    * @tparam A a type for that a [[ColumnTypeProvider]] is expected
+    *           (and an implicit provider is visible in the usage scope)
+    */
+  def basicTypeTraitsOf[A: ColumnTypeProvider]: BasicTypeTraits =
+    columnTypeProviderOf[A].typeTraits
+
+  private def forCompoundTraits[A](traits: CompoundTypeTraits): TypeProvider[A] = new TypeProvider[A] {
     override val typeTraits: TypeTraits = traits
   }
 }
