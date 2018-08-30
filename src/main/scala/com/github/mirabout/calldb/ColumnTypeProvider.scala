@@ -73,6 +73,22 @@ trait TypeProvider[A] {
   val typeTraits: TypeTraits
 }
 
+trait BasicTypeProvider[A] extends TypeProvider[A] {
+  val typeTraits: BasicTypeTraits
+}
+
+/**
+  * Same as [[BasicTypeProvider]], kept for backward compatibility
+  */
+@deprecated("Use BasicTypeProvider instead", "0.0.27")
+trait ColumnTypeProvider[A] extends BasicTypeProvider[A] {
+  val typeTraits: BasicTypeTraits
+}
+
+trait CompoundTypeProvider[A] extends TypeProvider[A] {
+  val typeTraits: CompoundTypeTraits
+}
+
 object TypeProvider {
   /**
     * Creates a [[TypeProvider]] for a single row that has traits of type [[RowTypeTraits]]
@@ -81,7 +97,7 @@ object TypeProvider {
     * @tparam A an expected generic type parameter for the provider ([[Nothing]] if not specified)
     */
   def forRow[A](args: TypeProvider[_]*): TypeProvider[A] =
-    forCompoundTraits[A](RowTypeTraits(args map (_.typeTraits) :_*))
+    forTraits[A](RowTypeTraits(args map (_.typeTraits) :_*))
 
   /**
     * Creates a [[TypeProvider]] for an optional row that has traits of type [[OptRowTypeTraits]]
@@ -90,7 +106,7 @@ object TypeProvider {
     * @tparam A an expected generic type parameter for the provider ([[Nothing]] if not specified)
     */
   def forOptRow[A](args: TypeProvider[_]*): TypeProvider[A] =
-    forCompoundTraits[A](OptRowTypeTraits(args map (_.typeTraits) :_*))
+    forTraits[A](OptRowTypeTraits(args map (_.typeTraits) :_*))
 
   /**
     * Creates a [[TypeProvider]] for an sequence of rows that has traits of type [[RowSeqTypeTraits]]
@@ -99,7 +115,7 @@ object TypeProvider {
     * @tparam A an expected generic type parameter for the provider ([[Nothing]] if not specified)
     */
   def forRowSeq[A](args: TypeProvider[_]*): TypeProvider[A] =
-    forCompoundTraits[A](RowSeqTypeTraits(args map (_.typeTraits) :_*))
+    forTraits[A](RowSeqTypeTraits(args map (_.typeTraits) :_*))
 
   /**
     * An utility method that may be imported in a target scope to save typing
@@ -120,29 +136,42 @@ object TypeProvider {
 
   /**
     * An utility method that follows [[typeProviderOf]] idea
-    * for obtaining implicit instances of [[ColumnTypeProvider]] for a given type
-    * @tparam A a type for that a [[ColumnTypeProvider]] is expected
+    * for obtaining implicit instances of [[BasicTypeProvider]] for a given type
+    * @tparam A a type for that a [[BasicTypeProvider]] is expected
     *           (and an implicit provider is visible in the usage scope)
     */
-  def columnTypeProviderOf[A: ColumnTypeProvider]: ColumnTypeProvider[A] =
-    implicitly[ColumnTypeProvider[A]]
+  def basicTypeProviderOf[A: BasicTypeProvider]: BasicTypeProvider[A] =
+    implicitly[BasicTypeProvider[A]]
 
   /**
-    * An utility method that follows [[typeProviderOf]] and [[columnTypeProviderOf]] ideas
+    * An utility method that follows [[typeProviderOf]] and [[basicTypeProviderOf]] ideas
     * for obtaining instances of [[BasicTypeTraits]] for a given type.
-    * @tparam A a type for that a [[ColumnTypeProvider]] is expected
+    * @tparam A a type for that a [[BasicTypeProvider]] is expected
     *           (and an implicit provider is visible in the usage scope)
     */
   def basicTypeTraitsOf[A: ColumnTypeProvider]: BasicTypeTraits =
-    columnTypeProviderOf[A].typeTraits
+    basicTypeProviderOf[A].typeTraits
 
-  private def forCompoundTraits[A](traits: CompoundTypeTraits): TypeProvider[A] = new TypeProvider[A] {
-    override val typeTraits: TypeTraits = traits
+  /**
+    * An utility for creating instances of a [[TypeProvider]] based on the supplied [[TypeTraits]]
+    */
+  def forTraits[A](traits: TypeTraits): TypeProvider[A] = new TypeProvider[A] {
+    val typeTraits: TypeTraits = traits
   }
-}
 
-trait ColumnTypeProvider[A] extends TypeProvider[A] {
-  val typeTraits: BasicTypeTraits
+  /**
+    * An utility for creating instances of a [[BasicTypeProvider]] based on the supplied [[BasicTypeTraits]]
+    */
+  def forTraits[A](traits: BasicTypeTraits): BasicTypeProvider[A] = new BasicTypeProvider[A] {
+    override val typeTraits: BasicTypeTraits = traits
+  }
+
+  /**
+    * An utility for creating instances of a [[CompoundTypeProvider]] based on the supplied [[CompoundTypeTraits]]
+    */
+  def forTraits[A](traits: CompoundTypeTraits): CompoundTypeProvider[A] = new CompoundTypeProvider[A] {
+    override val typeTraits: CompoundTypeTraits = traits
+  }
 }
 
 trait ColumnTypeProviders extends BugReporting {
