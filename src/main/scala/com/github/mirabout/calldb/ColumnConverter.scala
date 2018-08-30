@@ -21,6 +21,15 @@ trait ColumnWriter[-A] {
   def mayWriteDirectly[B <: A](value: B) = false
 }
 
+object ColumnWriter {
+  /**
+    * An utility for convenient conversion from a [[Function1]] to a [[ColumnWriter]]
+    */
+  def apply[A](writer: A => Any): ColumnWriter[A] = new ColumnWriter[A] {
+    def write[B <: A](value: B): Any = writer(value)
+  }
+}
+
 /**
   * Mixin this trait into another class to use provided implicit column writers
   */
@@ -61,19 +70,11 @@ trait ColumnWriters {
     }
   }
 
-  implicit final val periodWriter = new ColumnWriter[org.joda.time.Period] {
-    def write[B <: org.joda.time.Period](value: B): Any = {
-      /**
-       * @note Period.getMillis returns only millis part of period
-       *       (it may be absent while the period is non-zero)
-       */
-      value.toStandardDuration.getMillis
-    }
-  }
+  implicit final val periodWriter: ColumnWriter[org.joda.time.Period] =
+    ColumnWriter(_.toStandardDuration.getMillis())
 
-  implicit final val durationWriter = new ColumnWriter[org.joda.time.Duration] {
-    def write[B <: org.joda.time.Duration](value: B): Any = value.getMillis
-  }
+  implicit final val durationWriter: ColumnWriter[org.joda.time.Duration] =
+    ColumnWriter(_.getMillis())
 
   implicit final val hStoreWriter = new ColumnWriter[Map[String, Option[String]]] {
     type JStringHashMap = java.util.HashMap[String, String]
@@ -112,6 +113,15 @@ trait ColumnReader[+A] extends BugReporting {
     case s: String => s
     case null => BUG(s"Expected non-null string value, got null value")
     case _ => BUG(s"Expected string value, got $rawValue of class ${rawValue.getClass}")
+  }
+}
+
+object ColumnReader {
+  /**
+    * An utility for convenient conversion from a [[Function1]] to a [[ColumnReader]]
+    */
+  def apply[A](reader: Any => A): ColumnReader[A] = new ColumnReader[A] {
+    def read(rawValue: Any): A = reader(rawValue)
   }
 }
 
