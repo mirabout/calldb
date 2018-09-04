@@ -1,4 +1,9 @@
-package com.github.mirabout.calldb
+package com.github.mirabout.calldb.generators
+
+import com.github.mirabout.calldb.{GenericEntityTable, TableName, RowDataParser}
+// This is a test-only dependency/import
+import com.github.mirabout.calldb.WithTestConnectionAndSqlExecuted
+
 
 import java.util.UUID
 
@@ -7,7 +12,7 @@ import org.specs2.mutable._
 
 case class GeneratorTestEntity(id: UUID, tag: Option[String], latitude: Double, longitude: Double)
 
-class GeneratorTestTable extends GenericEntityTable[GeneratorTestEntity] with GenericEntityTableBoilerplateSqlGenerator {
+class GeneratorTestTable extends GenericEntityTable[GeneratorTestEntity] with GenericEntityTableSqlGenerator {
   override lazy val tableName = TableName("tDummy")
   override lazy val entityParser: RowDataParser[GeneratorTestEntity] = ???
 
@@ -21,17 +26,19 @@ class GeneratorTestTable extends GenericEntityTable[GeneratorTestEntity] with Ge
   override lazy val keyColumns = IndexedSeq(Id)
 }
 
-private[this] object GeneratorTestTable extends GeneratorTestTable
+object GeneratorTestTable extends GeneratorTestTable
 
 class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
 
-  private def generatorPropsMap: Map[String, StatementsGeneratorProps] = {
+  type TestEnvironment = WithBoilerplateGeneratorTestEnvironment
+
+  private def generatorPropsMap: Map[String, GeneratorProps] = {
     GeneratorTestTable.generatorProps().map(props => (props.description, props)).toMap
   }
 
   "GenericEntityTableBoilerplateSqlGenerator" should {
 
-    "provide fully qualified column names view generator" in new WithBoilerplateGeneratorTestEnvironment {
+    "provide fully qualified column names view generator" in new TestEnvironment {
       val optViewGenerator = generatorPropsMap.get("fully qualified fields view")
       optViewGenerator must beSome
       val viewGenerator = optViewGenerator.get
@@ -55,39 +62,39 @@ class GenericEntityTableBoilerplateSqlGeneratorTest extends Specification {
       dropSql must_=== "drop view vDummy".toLowerCase()
     }
 
-    "provide insert procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("insert procedure", "pDummy_Insert(entity tDummy)")
+    "provide insert procedure generator" in new TestEnvironment {
+      testProcedure(key = "insert procedure", signature = "pDummy_Insert(entity tDummy)")
     }
 
-    "provide update procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("update procedure", "pDummy_Update(entity tDummy)")
+    "provide update procedure generator" in new TestEnvironment {
+      testProcedure(key = "update procedure", signature = "pDummy_Update(entity tDummy)")
     }
 
-    "provide insert many procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("insert many procedure", "pDummy_InsertMany(entities tDummy[])")
+    "provide insert many procedure generator" in new TestEnvironment {
+      testProcedure(key = "insert many procedure", signature = "pDummy_InsertMany(entities tDummy[])")
     }
 
-    "provide update many procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("update many procedure", "pDummy_UpdateMany(entities tDummy[])")
+    "provide update many procedure generator" in new TestEnvironment {
+      testProcedure(key = "update many procedure", signature = "pDummy_UpdateMany(entities tDummy[])")
     }
 
-    "provide insert or ignore procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("insert or ignore procedure", "pDummy_InsertOrIgnore(entity tDummy)")
+    "provide insert or ignore procedure generator" in new TestEnvironment {
+      testProcedure(key = "insert or ignore procedure", signature = "pDummy_InsertOrIgnore(entity tDummy)")
     }
 
-    "provide insert or update procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("insert or update procedure", "pDummy_InsertOrUpdate(entity tDummy)")
+    "provide insert or update procedure generator" in new TestEnvironment {
+      testProcedure(key = "insert or update procedure", signature = "pDummy_InsertOrUpdate(entity tDummy)")
     }
 
-    "provide insert or ignore many procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("insert or ignore many procedure", "pDummy_InsertOrIgnoreMany(entities tDummy[])")
+    "provide insert or ignore many procedure generator" in new TestEnvironment {
+      testProcedure(key = "insert or ignore many procedure", signature = "pDummy_InsertOrIgnoreMany(entities tDummy[])")
     }
 
-    "provide insert or update many procedure generator" in new WithBoilerplateGeneratorTestEnvironment {
-      testProcedure("insert or update many procedure", "pDummy_InsertOrUpdateMany(entities tDummy[])")
+    "provide insert or update many procedure generator" in new TestEnvironment {
+      testProcedure(key = "insert or update many procedure", signature = "pDummy_InsertOrUpdateMany(entities tDummy[])")
     }
 
-    "provide qualify columns procedure" in new WithBoilerplateGeneratorTestEnvironment {
+    "provide qualify columns procedure" in new TestEnvironment {
       private val viewGenerator = generatorPropsMap.apply("fully qualified fields view")
       executeSql(connection, viewGenerator.createSql.get)
       testProcedure("qualify columns procedure", "pQualifyColumns(t tDummy)")
