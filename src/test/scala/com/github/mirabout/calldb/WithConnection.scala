@@ -75,10 +75,21 @@ trait WithSqlExecutedBeforeAndAfter extends WithConnectionLifecycle {
 }
 
 // Change connection string according to your test machine setup
-class WithTestConnection extends WithConnection(WithTestConnection.ConnectionString)
+class WithTestConnection extends WithConnection(WithTestConnection.connectionString)
 
 object WithTestConnection {
-  final val ConnectionString = "jdbc:postgresql://localhost:5432/testcalldb?user=testcalldb&password=testcalldb"
+  def connectionString: String = {
+    val (database, userName, password) = {
+      if (sys.env.contains("TRAVIS") && sys.env.contains("CI")) {
+        ("testcalldb", "travis", "")
+      } else {
+        // TODO: Avoid hardcoding this
+        ("testcalldb", "testcalldb", "testcalldb")
+      }
+    }
+    s"jdbc:postgresql://localhost:5432/$database?user=$userName&password=$password"
+  }
 }
 
-class WithTestConnectionAndSqlExecuted(val sqlCommonName: String) extends WithTestConnection with WithSqlExecutedBeforeAndAfter
+class WithTestConnectionAndSqlExecuted(val sqlCommonName: String)
+  extends WithTestConnection with WithSqlExecutedBeforeAndAfter

@@ -1,0 +1,20 @@
+language: scala
+scala:
+  - 2.11.8
+
+jdk: oraclejdk8
+
+services:
+  - postgresql
+
+addons:
+  postgresql: "9.5"
+
+sudo: enabled
+
+before_script:
+  - psql template1 -c "create extension hstore"
+  - psql template1 -c "create extension \"uuid-ossp\""
+  # Note: extensions must be registered before database creation
+  - psql -U postgres -c "create database testcalldb"
+  - psql -U postgres -c "grant all on database testcalldb to travis"
