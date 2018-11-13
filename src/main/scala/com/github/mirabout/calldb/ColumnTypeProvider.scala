@@ -3,6 +3,9 @@ package com.github.mirabout.calldb
 import scala.reflect.ClassTag
 import scala.collection.mutable
 
+/**
+  * Database storage traits of a type.
+  */
 sealed abstract class TypeTraits {
   def isBasic: Boolean = false
   def isCompound: Boolean = false
@@ -14,6 +17,9 @@ sealed abstract class TypeTraits {
     if (isBasic) Left(asInstanceOf[BasicTypeTraits]) else Right(asInstanceOf[CompoundTypeTraits])
 }
 
+/**
+  * Database storage traits of scalars and arrays of scalars.
+  */
 sealed abstract class BasicTypeTraits extends TypeTraits {
   override def isBasic = true
   def storedInType: PgType
@@ -24,23 +30,40 @@ sealed abstract class BasicTypeTraits extends TypeTraits {
   def toScalarTypeTraits: ScalarTypeTraits
 }
 
+/**
+  * Database storage traits for scalars.
+  * @param classInCode a JVM class of a scalar
+  * @param storedInType a database type a scalar gets stored in
+  * @param isNullable can a database scalar value be nullable
+  */
 final case class ScalarTypeTraits(classInCode: Class[_], storedInType: PgType, isNullable: Boolean = false)
   extends BasicTypeTraits with BugReporting {
   def copyWithNullable(nullable: Boolean): ScalarTypeTraits = copy(isNullable = nullable)
   def toArrayTypeTraits = ArrayTypeTraits(classInCode, storedInType.arrayType, isNullable)
   // If it gets called, it is a caller error
-  def toScalarTypeTraits = BUG(s"$this already is a ScalarTypeTraits")
+  def toScalarTypeTraits: Nothing = BUG(s"$this already is a ScalarTypeTraits")
 }
 
+/**
+  * Database storage traits for arrays of scalars.
+  * @param elemClassInCode a JVM class of an array element. Do not confuse this
+  *                        with a class of a JVM array of scalars. These traits
+  *                        correspond to an arbitrary [[Traversable]] of scalars.
+  * @param storedInType a database type an array gets stored in
+  * @param isNullable can a database array value be nullable
+  */
 final case class ArrayTypeTraits(elemClassInCode: Class[_], storedInType: PgArray, isNullable: Boolean = false)
   extends BasicTypeTraits with BugReporting {
   def copyWithNullable(nullable: Boolean): ArrayTypeTraits = copy(isNullable = nullable)
   def toScalarTypeTraits = ScalarTypeTraits(elemClassInCode, storedInType.elemType)
   // If it gets called, it is an caller error
-  def toArrayTypeTraits =
+  def toArrayTypeTraits: Nothing =
     BUG(s"$this already is an ArrayTypeTraits (arrays of arrays are not allowed as db entity fields)")
 }
 
+/**
+  * Database storage type traits for compound types (records).
+  */
 sealed abstract class CompoundTypeTraits extends TypeTraits {
   override def isCompound = true
   def columnsTraits: IndexedSeq[BasicTypeTraits]
@@ -56,12 +79,24 @@ class CompoundTypeTraitsCompanion[T <: CompoundTypeTraits](constructor: IndexedS
   }
 }
 
+/**
+  * Database storage type traits for a single record-like compound value.
+  * @param columnsTraits column traits for the record columns
+  */
 final case class RowTypeTraits(columnsTraits: IndexedSeq[BasicTypeTraits]) extends CompoundTypeTraits
 object RowTypeTraits extends CompoundTypeTraitsCompanion[RowTypeTraits](args => new RowTypeTraits(args))
 
+/**
+  * Database storage type traits for a record-like compound value that is nullable.
+  * @param columnsTraits column traits for the record columns
+  */
 final case class OptRowTypeTraits(columnsTraits: IndexedSeq[BasicTypeTraits]) extends CompoundTypeTraits
 object OptRowTypeTraits extends CompoundTypeTraitsCompanion[OptRowTypeTraits](args => new OptRowTypeTraits(args))
 
+/**
+  * Database storage type traits for an arbitrary sequence of record-like values.
+  * @param rowTypeTraits column traits for the record columns
+  */
 final case class RowSeqTypeTraits(rowTypeTraits: RowTypeTraits) extends CompoundTypeTraits {
   def columnsTraits: IndexedSeq[BasicTypeTraits] = rowTypeTraits.columnsTraits
 }
@@ -69,11 +104,20 @@ final case class RowSeqTypeTraits(rowTypeTraits: RowTypeTraits) extends Compound
 object RowSeqTypeTraits extends CompoundTypeTraitsCompanion[RowSeqTypeTraits](args =>
   new RowSeqTypeTraits(new RowTypeTraits(args)))
 
-trait TypeProvider[A] {
+/**
+  * A bearer of [[TypeTraits]] that is specific to the type
+  * @tparam A a type that is described by the [[TypeTraits]].
+  *           The variance is correct e.g. a type provider of cats
+  *           suits as a type provider of animals as well.
+  */
+trait TypeProvider[+A] {
   val typeTraits: TypeTraits
 }
 
-trait BasicTypeProvider[A] extends TypeProvider[A] {
+/**
+  * A bearer of [[TypeTraits]] for scalars and arrays of scalars.
+  */
+trait BasicTypeProvider[+A] extends TypeProvider[A] {
   val typeTraits: BasicTypeTraits
 }
 
@@ -81,11 +125,14 @@ trait BasicTypeProvider[A] extends TypeProvider[A] {
   * Same as [[BasicTypeProvider]], kept for backward compatibility
   */
 @deprecated("Use BasicTypeProvider instead", "0.0.27")
-trait ColumnTypeProvider[A] extends BasicTypeProvider[A] {
+trait ColumnTypeProvider[+A] extends BasicTypeProvider[A] {
   val typeTraits: BasicTypeTraits
 }
 
-trait CompoundTypeProvider[A] extends TypeProvider[A] {
+/**
+  * A bearer of [[TypeTraits]] for record-like types and collections of records.
+  */
+trait CompoundTypeProvider[+A] extends TypeProvider[A] {
   val typeTraits: CompoundTypeTraits
 }
 
@@ -221,100 +268,71 @@ trait ColumnTypeProviders extends BugReporting {
   implicit final val hStoreTypeProvider: BasicTypeProvider[Map[String, Option[String]]] =
     new ScalarTypeProvider(classOf[Map[String, Option[String]]], PgType.Hstore)
 
-  private def failOnNullElemProvider[A](elemProvider: TypeProvider[A], classTag: ClassTag[A]): Unit = {
+  private def failOnNullElemProvider[A](elemProvider: TypeProvider[A]): Unit = {
     if (elemProvider eq null) {
       BUG(
-        s"Elem provider for $classTag is null. " +
+        s"An element type provider is null. " +
         s"It may be caused by initialization order effects. " +
         s"Prefer `def` or `lazy val` in caller code.")
     }
   }
 
-  implicit final def optionTypeProvider[A](implicit elemProvider: TypeProvider[A],
-                                           classTag: ClassTag[A] = null)
+  implicit final def optionTypeProvider[A](implicit elemProvider: TypeProvider[A])
   : TypeProvider[Option[A]] = {
-    failOnNullElemProvider(elemProvider, classTag)
+    failOnNullElemProvider(elemProvider)
     val typeTraits: TypeTraits = {
       elemProvider.typeTraits match {
         case bt: BasicTypeTraits => bt.copyWithNullable(nullable = true)
         case ct: CompoundTypeTraits => ct match {
-          case rt: RowTypeTraits => OptRowTypeTraits(ct.columnsTraits)
-          case ot: OptRowTypeTraits => BUG("Can't make a type traits for option of opt row")
-          case st: RowSeqTypeTraits => BUG("Can't make a type traits for option of seq of rows")
+          case _: RowTypeTraits => OptRowTypeTraits(ct.columnsTraits)
+          case _: OptRowTypeTraits => BUG("Can't make a type traits for option of opt row")
+          case _: RowSeqTypeTraits => BUG("Can't make a type traits for option of seq of rows")
         }
       }
     }
     TypeProvider.forTraits(typeTraits)
   }
 
-  implicit final def basicOptionTypeProvider[A](implicit elemProvider: BasicTypeProvider[A],
-                                                classTag: ClassTag[A])
+  implicit final def basicOptionTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
   : BasicTypeProvider[Option[A]] = {
-    failOnNullElemProvider(elemProvider, classTag)
+    failOnNullElemProvider(elemProvider)
     if (elemProvider.typeTraits.isNullable) {
       BUG(s"Can't make a type traits for option of option")
     }
     TypeProvider.forTraits(elemProvider.typeTraits.copyWithNullable(nullable = true))
   }
 
+  implicit final def basicTraversableTypeProvider[Coll[_], A](implicit elemProvider: BasicTypeProvider[A])
+  : BasicTypeProvider[Coll[A]] = {
+    failOnNullElemProvider(elemProvider)
+    if (elemProvider.typeTraits.isNullable) {
+      BUG(s"Can't make a type traits for option of option")
+    }
+    if (!elemProvider.typeTraits.isBasic) {
+      BUG(s"Only basic type traits are expected")
+    }
+    new ArrayLikeTypeProvider(elemProvider)
+  }
+
   final class ArrayLikeTypeProvider[Coll[_], A](elemProvider: BasicTypeProvider[A]) extends BasicTypeProvider[Coll[A]] {
     val typeTraits: ArrayTypeTraits = elemProvider.typeTraits.toArrayTypeTraits
   }
 
-  // More generic version. We use classTag for debugging only, type gets erased completely
-  implicit final def indexedSeqTypeProvider[A](implicit elemProvider: TypeProvider[A],
-                                               classTag: ClassTag[A] = null)
-  : TypeProvider[IndexedSeq[A]] = {
-    failOnNullElemProvider(elemProvider, null)
+  implicit final def traversableTypeProvider[Coll[_], A](implicit elemProvider: TypeProvider[A])
+  : TypeProvider[Coll[A]] = {
+    failOnNullElemProvider(elemProvider)
     elemProvider match {
       case ctp: BasicTypeProvider[A] => new ArrayLikeTypeProvider(ctp)
       case _ => elemProvider.typeTraits match {
         case ct: CompoundTypeTraits => ct match {
           case rt: RowTypeTraits => TypeProvider.forTraits(RowSeqTypeTraits(rt))
-          case ot: OptRowTypeTraits => BUG("Can't make IndexedSeq type provider for opt row type provider")
-          case st: RowSeqTypeTraits => BUG("Can't make IndexedSeq type provider for row seq type provider")
+          case _: OptRowTypeTraits => BUG("Can't make IndexedSeq type provider for opt row type provider")
+          case _: RowSeqTypeTraits => BUG("Can't make IndexedSeq type provider for row seq type provider")
         }
         case _ => BUG(s"Can't make IndexedSeq type provider for $elemProvider")
       }
     }
   }
-
-  implicit final def basicIndexedSeqTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
-    : BasicTypeProvider[IndexedSeq[A]] =
-      new ArrayLikeTypeProvider(elemProvider)
-
-  implicit final def seqTypeProvider[A](implicit elemProvider: TypeProvider[A],
-                                        d: DummyImplicit,
-                                        classTag: ClassTag[A] = null)
-  : TypeProvider[Seq[A]] =
-    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Seq[A]]]  // TODO: Check variance to avoid cast?
-
-  implicit final def basicSeqTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
-    : BasicTypeProvider[Seq[A]] =
-      new ArrayLikeTypeProvider(elemProvider)
-
-  implicit final def setTypeProvider[A](implicit elemProvider: TypeProvider[A],
-                                        d: DummyImplicit,
-                                        classTag: ClassTag[A] = null)
-  : TypeProvider[Set[A]] = {
-    // A param type is erased, so the cast is legal
-    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Set[A]]]
-  }
-
-  implicit final def columnSetTypeProvider[A](implicit elemProvider: BasicTypeProvider[A]): BasicTypeProvider[Set[A]] =
-    new ArrayLikeTypeProvider(elemProvider)
-
-  implicit final def traversableTypeProvider[A](implicit elemProvider: TypeProvider[A],
-                                                d: DummyImplicit,
-                                                classTag: ClassTag[A] = null)
-  : TypeProvider[Traversable[A]] = {
-    // Param type is erased, so cast is ok
-    indexedSeqTypeProvider(elemProvider, classTag).asInstanceOf[TypeProvider[Traversable[A]]]
-  }
-
-  implicit final def columnTraversableTypeProvider[A](implicit elemProvider: BasicTypeProvider[A])
-    : BasicTypeProvider[Traversable[A]] =
-      new ArrayLikeTypeProvider(elemProvider)
 
   implicit final def tuple2TypeProvider[A, B](implicit p1: BasicTypeProvider[A],
                                               p2: BasicTypeProvider[B])
