@@ -12,11 +12,11 @@ trait ParamNameProvider {
   def name: String
 }
 
-trait ParamsEncoder[A] extends ParamNameProvider {
+trait ParamsEncoder[+A] extends ParamNameProvider {
   /**
     * @todo Deprecate in favor of [[encodeParam(A, StringAppender)]]
     */
-  def encodeParam(value: A): String = {
+  def encodeParam[AA >: A](value: AA): String = {
     val output = new StringAppender()
     encodeParam(value, output)
     output.result()
@@ -26,7 +26,7 @@ trait ParamsEncoder[A] extends ParamNameProvider {
     * Writes a value as a part of a procedure call with the value
     * as a named parameter to a [[StringAppender]] that builds a call SQL
     */
-  def encodeParam(value: A, output: StringAppender): Unit
+  def encodeParam[AA >: A](value: AA, output: StringAppender): Unit
 }
 
 /**
@@ -107,7 +107,7 @@ private[calldb] object PostgreSQLScalarValueEncoder {
   * @tparam C A Scala column type corresponding to the entity field
   * @todo Fix and specify type parameters variance
   */
-final class TableColumn[E, C](
+final class TableColumn[+E, +C](
     val name                               : String,
     private[this]  val fromEntity_         : E => C,
     private[this]  val tableName_          : => Option[String])
@@ -132,7 +132,7 @@ final class TableColumn[E, C](
   /**
     * Extracts a column value from an entity and returns it as [[Any]]
     */
-  def apply(e: E): Any = writer.write(fromEntity_(e))
+  def apply[EE >: E](e: EE): Any = writer.write(fromEntity_(e.asInstanceOf[E]))
 
   /**
     * @todo describe why it is optional (better totally remove using table columns this way in favor of [[Param]])
@@ -160,7 +160,7 @@ final class TableColumn[E, C](
   /**
     * @inheritdoc
     */
-  override def encodeParam(value: C, output: StringAppender): Unit = {
+  override def encodeParam[CC >: C](value: CC, output: StringAppender): Unit = {
     output += name += "_ :="
     PostgreSQLScalarValueEncoder.encodeValue(value, output)
   }

@@ -133,7 +133,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
   }
 }
 
-trait WithAllColumns[E] {
+trait WithAllColumns[+E] {
   def allColumns: IndexedSeq[TableColumn[E, _]]
 }
 
@@ -141,11 +141,11 @@ trait WithAllProcedures[E] {
   def allProcedures: Traversable[TypedCallable[_]]
 }
   
-trait EntityTypeProvider[E] extends TypeProvider[E] { self: WithAllColumns[E] =>
+trait EntityTypeProvider[+E] extends TypeProvider[E] { self: WithAllColumns[E] =>
   val typeTraits = RowTypeTraits(allColumns map (_.typeTraits))
 }
 
-trait RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
+trait RowEncoder[+E] { self: WithAllColumns[E] with NamedTable =>
   // To avoid boxing, use specialized collection
   private[this] val columnByIndexMap: mutable.LongMap[TableColumn[E, Any]] = {
     val result = new mutable.LongMap[TableColumn[E, Any]](allColumns.size)
@@ -153,7 +153,7 @@ trait RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
     result
   }
 
-  protected final def encodeRow(value: E, output: StringAppender): Unit = {
+  protected final def encodeRow[EE >: E](value: EE, output: StringAppender): Unit = {
     output += "ROW("
     var i = -1
     while ({i += 1; i < allColumns.size}) {
@@ -168,26 +168,26 @@ trait RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
   }
 }
 
-trait EntityParamsEncoder[E] extends ParamsEncoder[E] with RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
+trait EntityParamsEncoder[+E] extends ParamsEncoder[E] with RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
 
-  def encodeParam(value: E, output: StringAppender): Unit = {
+  def encodeParam[EE >: E](value: EE, output: StringAppender): Unit = {
     output += s"$name := "
     encodeRow(value, output)
   }
 }
 
-final case class EntityParamsDef[E](allColumns: IndexedSeq[TableColumn[E, _]], tableName: TableName)
+final case class EntityParamsDef[+E](allColumns: IndexedSeq[TableColumn[E, _]], tableName: TableName)
   extends TypedCallable.ParamsDef[E] with EntityTypeProvider[E] with EntityParamsEncoder[E] with WithAllColumns[E] with NamedTable {
   override def name = "entity"
 }
 
-trait EntitiesArrayTypeProvider[E] extends TypeProvider[Traversable[E]] { self: WithAllColumns[E] =>
+trait EntitiesArrayTypeProvider[+E] extends TypeProvider[Traversable[E]] { self: WithAllColumns[E] =>
   val typeTraits = RowSeqTypeTraits(RowTypeTraits(allColumns map (_.typeTraits)))
 }
 
-trait EntitiesArrayParamsEncoder[E] extends ParamsEncoder[Traversable[E]] with RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
+trait EntitiesArrayParamsEncoder[+E] extends ParamsEncoder[Traversable[E]] with RowEncoder[E] { self: WithAllColumns[E] with NamedTable =>
 
-  def encodeParam(values: Traversable[E], output: StringAppender): Unit = {
+  def encodeParam[T >: Traversable[E]](values: T, output: StringAppender): Unit = {
     output += "entities := ARRAY["
     values match {
       case isq: IndexedSeq[E] => encodeSeq(isq, output)
@@ -198,7 +198,7 @@ trait EntitiesArrayParamsEncoder[E] extends ParamsEncoder[Traversable[E]] with R
     output += ']'
   }
 
-  private def encodeTvs(values: Traversable[E], output: StringAppender): Unit = {
+  private def encodeTvs[EE >: E](values: Traversable[EE], output: StringAppender): Unit = {
     var commaSet = false
     for (value <- values) {
       encodeRow(value, output)
@@ -210,7 +210,7 @@ trait EntitiesArrayParamsEncoder[E] extends ParamsEncoder[Traversable[E]] with R
       output.chopLast()
   }
 
-  private def encodeItr(values: Iterable[E], output: StringAppender): Unit = {
+  private def encodeItr[EE >: E](values: Iterable[EE], output: StringAppender): Unit = {
     val iterator = values.iterator
     val commaSet = iterator.hasNext
     while (iterator.hasNext) {
@@ -222,7 +222,7 @@ trait EntitiesArrayParamsEncoder[E] extends ParamsEncoder[Traversable[E]] with R
       output.chopLast()
   }
 
-  private def encodeSeq(values: IndexedSeq[E], output: StringAppender): Unit = {
+  private def encodeSeq[EE >: E](values: Seq[EE], output: StringAppender): Unit = {
     var i = -1
     while ({i += 1; i < values.length}) {
       encodeRow(values(i), output)
@@ -234,7 +234,7 @@ trait EntitiesArrayParamsEncoder[E] extends ParamsEncoder[Traversable[E]] with R
   }
 }
 
-final case class EntitiesArrayParamsDef[E](allColumns: IndexedSeq[TableColumn[E, _]], tableName: TableName)
+final case class EntitiesArrayParamsDef[+E](allColumns: IndexedSeq[TableColumn[E, _]], tableName: TableName)
   extends TypedCallable.ParamsDef[Traversable[E]]
     with EntitiesArrayParamsEncoder[E] with EntitiesArrayTypeProvider[E]
     with WithAllColumns[E] with NamedTable {
