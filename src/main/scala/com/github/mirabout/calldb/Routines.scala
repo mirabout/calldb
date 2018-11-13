@@ -147,7 +147,7 @@ sealed trait TypedCallable[R] { self: UntypedRoutine =>
 }
 
 object TypedCallable {
-  trait ParamsDef[A] extends ParamsEncoder[A] with TypeProvider[A]
+  trait ParamsDef[+A] extends ParamsEncoder[A] with TypeProvider[A]
 }
 
 import TypedCallable._
