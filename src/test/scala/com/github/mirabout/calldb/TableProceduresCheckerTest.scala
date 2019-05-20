@@ -245,7 +245,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
 
       "reject procedure if code and DB parameters count does not match" in new WithTestEnvironment {
         val procedureName = "pDummyTypeChecked3"
-        val procedure = Procedure0(RowDataParser.long(0).single).withMemberName(procedureName)
+        val procedure = Procedure0.returningLong().withMemberName(procedureName)
         val checker = newProcedureChecker(procedure, fetchProcedureDef(procedureName))
         val expectedError = checker.errorDBArgsCountDoesNotMatchCodeOne()
         checker.result().map(_.toSet) must_== Some(Set(expectedError))
@@ -253,7 +253,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
 
       "reject procedure if code parameter is of basic type and DB parameter is of compound type" in new WithTestEnvironment {
         val procedureName = "pDummyTypeChecked2"
-        val procedure = Procedure1(RowDataParser.long(0).single, Param("arg0", 0)).withMemberName(procedureName)
+        val procedure = Procedure1.returningLong(Param("arg0", 0)).withMemberName(procedureName)
         val dbProcedureDef = fetchProcedureDef(procedureName)
         val checker = newParamChecker(procedure, fetchProcedureDef(procedureName), 0)
         val integerTypeOid = PgType.Integer.getOrFetchOid().get
@@ -266,7 +266,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         val column2 = TableColumn('longitude, 0.0)
         val entityParamsDef = EntityParamsDef(IndexedSeq(column1, column2), TableName("tDummy"))
         val procedureName = "pDummyTypeChecked1"
-        val procedure = Procedure1(RowDataParser.long(0).single, entityParamsDef).withMemberName(procedureName)
+        val procedure = Procedure1.returningLong(entityParamsDef).withMemberName(procedureName)
         val dbProcedureDef = fetchProcedureDef(procedureName)
         val checker = newParamChecker(procedure, dbProcedureDef, 0)
         val integerOid = PgType.Integer.getOrFetchOid().get.exactOid
@@ -276,7 +276,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
 
       "reject procedure if code and DB parameters basic types do not match" in new WithTestEnvironment {
         val procedureName = "pDummyTypeChecked1"
-        val procedure = Procedure1(RowDataParser.long(0).single, Param("arg0", "")).withMemberName(procedureName)
+        val procedure = Procedure1.returningLong(Param("arg0", "")).withMemberName(procedureName)
         val checker = newParamChecker(procedure, fetchProcedureDef(procedureName), 0)
         val textTypeOid = PgType.Text.getOrFetchOid().get
         val integerOid = PgType.Integer.getOrFetchOid().get.exactOid
@@ -290,7 +290,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         val column3 = TableColumn('altitude, Some(0.0).asInstanceOf[Option[Double]])
         val entityParamsDef = EntityParamsDef(IndexedSeq(column1, column2, column3), TableName("tGeoPoint"))
         val procedureName = "pDummyTypeChecked2"
-        val procedure = Procedure1(RowDataParser.long(0).single, entityParamsDef).withMemberName(procedureName)
+        val procedure = Procedure1.returningLong(entityParamsDef).withMemberName(procedureName)
         val checker = newParamChecker(procedure, fetchProcedureDef(procedureName), 0)
         val expectedError = checker.errorAttributeDefsSizeDoesNotMatch(2, entityParamsDef.allColumns.size)
         checker.result().map(_.toSet) must_=== Some(Set(expectedError))
@@ -303,7 +303,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         // Should be Double
         val entityParamsDef = EntityParamsDef(IndexedSeq(column1, column2), TableName("tGeoPoint"))
         val procedureName = "pDummyTypeChecked2"
-        val procedure = Procedure1(RowDataParser.long(0).single, entityParamsDef).withMemberName(procedureName)
+        val procedure = Procedure1.returningLong(entityParamsDef).withMemberName(procedureName)
         val checker = newParamChecker(procedure, fetchProcedureDef(procedureName), 0)
         val longTypeOid = PgType.Bigint.getOrFetchOid().get
         val doubleOid = PgType.Double.getOrFetchOid().get.exactOid
@@ -317,7 +317,7 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         val column2 = TableColumn('longitude, 0.0)
         val paramsDef = EntityParamsDef(IndexedSeq(column1, column2), TableName("tGeoPoint"))
         val procedureName = "pDummyTypeChecked3"
-        val procedure = Procedure1(RowDataParser.long(0).single, paramsDef).withMemberName(procedureName)
+        val procedure = Procedure1.returningLong(paramsDef).withMemberName(procedureName)
         val dbProcedureDef = fetchProcedureDef(procedureName)
         val checker = newParamChecker(procedure, dbProcedureDef, 0)
         checker.result() must beNone

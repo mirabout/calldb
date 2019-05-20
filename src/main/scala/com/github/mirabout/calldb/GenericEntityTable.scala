@@ -73,13 +73,11 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   implicit lazy val entityTypeProvider: EntityParamsDef[E] = EntityDef
 
-  private final val longResultParser = RowDataParser.long(0).single
-
-  lazy val pInsert = Procedure1(longResultParser, EntityDef).mapWith(_ == 1)
+  lazy val pInsert = Procedure1.returningLong(EntityDef).mapWith(_ == 1)
 
   def insert(entity: E)(implicit c: Connection): Future[Boolean] = pInsert(entity)
 
-  lazy val pInsertMany = Procedure1(longResultParser, EntitiesArrayDef)
+  lazy val pInsertMany = Procedure1.returningLong(EntitiesArrayDef)
 
   def insertMany(entities: Traversable[E])(implicit c: Connection): Future[Boolean] = {
     if (entities.hasDefiniteSize) {
@@ -90,11 +88,11 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
     }
   }
 
-  lazy val pUpdate = Procedure1(longResultParser, EntityDef).mapWith(_ == 1)
+  lazy val pUpdate = Procedure1.returningLong(EntityDef).mapWith(_ == 1)
 
   def update(entity: E)(implicit c: Connection): Future[Boolean] = pUpdate(entity)
 
-  lazy val pUpdateMany = Procedure1(longResultParser, EntitiesArrayDef)
+  lazy val pUpdateMany = Procedure1.returningLong(EntitiesArrayDef)
 
   def updateMany(entities: Traversable[E])(implicit c: Connection): Future[Boolean] = {
     if (entities.hasDefiniteSize) {
@@ -105,16 +103,16 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
     }
   }
 
-  lazy val pInsertOrUpdate = Procedure1(longResultParser, EntityDef).mapWith(_ == 1)
-  lazy val pInsertOrIgnore = Procedure1(longResultParser, EntityDef).mapWith(_ == 1)
+  lazy val pInsertOrUpdate = Procedure1.returningLong(EntityDef).mapWith(_ == 1)
+  lazy val pInsertOrIgnore = Procedure1.returningLong(EntityDef).mapWith(_ == 1)
 
   def insertOrUpdate(entity: E)(implicit c: Connection): Future[Boolean] = pInsertOrUpdate(entity)
   def insertOrIgnore(entity: E)(implicit c: Connection): Future[Boolean] = pInsertOrIgnore(entity)
 
   def put(entity: E)(implicit c: Connection): Future[Boolean] = insertOrUpdate(entity)
 
-  lazy val pInsertOrUpdateMany = Procedure1(longResultParser, EntitiesArrayDef)
-  lazy val pInsertOrIgnoreMany = Procedure1(longResultParser, EntitiesArrayDef)
+  lazy val pInsertOrUpdateMany = Procedure1.returningLong(EntitiesArrayDef)
+  lazy val pInsertOrIgnoreMany = Procedure1.returningLong(EntitiesArrayDef)
 
   def insertOrUpdateMany(entities: Traversable[E])(implicit c: Connection): Future[Boolean] = {
     if (entities.hasDefiniteSize) {

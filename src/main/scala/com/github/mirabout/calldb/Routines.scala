@@ -180,6 +180,9 @@ class Procedure0[R] private(parser: ResultSetParser[R], typeTraits: TypeTraits)
 object Procedure0 {
   def apply[R](resultSetParser: ResultSetParser[R])(implicit tp: TypeProvider[R]) =
     new Procedure0(resultSetParser, tp.typeTraits)
+
+  def returningLong()(implicit tp: TypeProvider[Long]) =
+    apply(RowDataParser.returns.long(0).single)
 }
 
 class Procedure1[R, T1] private(parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1])
@@ -195,6 +198,9 @@ class Procedure1[R, T1] private(parser: ResultSetParser[R], typeTraits: TypeTrai
 object Procedure1 {
   def apply[R, T1](parser: ResultSetParser[R], _1: ParamsDef[T1])(implicit tp: TypeProvider[R]) =
     new Procedure1(parser, tp.typeTraits, _1)
+
+  def returningLong[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Long]) =
+    apply(RowDataParser.returns.long(0).single, _1)
 }
 
 class Procedure2[R, T1, T2] private
@@ -211,6 +217,9 @@ class Procedure2[R, T1, T2] private
 object Procedure2 {
   def apply[R, T1, T2](parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[R]) =
     new Procedure2(parser, tp.typeTraits, _1, _2)
+
+  def returningLong[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[Long]) =
+    apply(RowDataParser.returns.long(0).single, _1, _2)
 }
 
 class Procedure3[R, T1, T2, T3] private
@@ -228,6 +237,9 @@ object Procedure3 {
   def apply[R, T1, T2, T3](parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
     (implicit tp: TypeProvider[R]) =
       new Procedure3(parser, tp.typeTraits, _1, _2, _3)
+
+  def returningLong[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])(implicit tp: TypeProvider[Long]) =
+    apply(RowDataParser.returns.long(0).single, _1, _2, _3)
 }
 
 class Procedure4[R, T1, T2, T3, T4] private
@@ -245,6 +257,11 @@ object Procedure4 {
   def apply[R, T1, T2, T3, T4]
     (parser: ResultSetParser[R], _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
       (implicit tp: TypeProvider[R]) =
-    new Procedure4(parser, tp.typeTraits, _1, _2, _3, _4)
+        new Procedure4(parser, tp.typeTraits, _1, _2, _3, _4)
+
+  def returningLong[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[Long]) =
+          apply(RowDataParser.returns.long(0).single, _1, _2, _3, _4)
 }
 
