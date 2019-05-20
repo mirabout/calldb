@@ -60,7 +60,7 @@ abstract class RowDataParser[Row](private[this] val parseFunc: RowData => Row) e
   def expectedColumnsNames: Option[IndexedSeq[String]]
 }
 
-object RowDataParser extends BugReporting {
+object RowDataParser {
 
   abstract class SingleColumnNamedParser[A](name: String)(parseFunc: RowData => A) extends RowDataParser[A](parseFunc) {
     val expectedColumnsNames: Option[IndexedSeq[String]] = Some(IndexedSeq(name))
@@ -112,7 +112,7 @@ object RowDataParser extends BugReporting {
   private[this] def parseUuid(o: Any) = o match {
     case s: java.lang.String => UUID.fromString(s)
     case u: java.util.UUID => u
-    case _ => BUG(s"Can't parse $o as UUID")
+    case _ => throw new IllegalArgumentException(s"Can't parse $o as UUID")
   }
 
   def uuid(name: String): RowDataParser[UUID] =
@@ -124,14 +124,14 @@ object RowDataParser extends BugReporting {
   private class ZippedParser[A, B](parserA: RowDataParser[A], parserB: RowDataParser[B])
     extends RowDataParser[(A, B)](row => (parserA.fromRow(row), parserB.fromRow(row))) {
 
-    private def failOnAbsentNames(token: RowDataParser[_]) = BUG(
-      s"Can't merge column names for a zipped parser: " +
-      s"names for parser $token are absent, names for other one are present")
+    private def failOnAbsentNames(token: RowDataParser[_]) = throw new IllegalArgumentException(s"Can't merge " +
+      s"column names for a zipped parser: names for parser $token are absent, names for other one are present")
 
     private def mergeNames(namesA: IndexedSeq[String], namesB: IndexedSeq[String]) = {
       val mergedNames = (namesA ++ namesB).map(_.toLowerCase)
       if (mergedNames.toSet.size != mergedNames.size) {
-        BUG(s"Can't merge column names for $parserA ($namesA) and $parserB ($namesB): duplicate names exist")
+        throw new IllegalArgumentException(s"Can't merge column names for " +
+          s"$parserA ($namesA) and $parserB ($namesB): duplicate names exist")
       }
       Some(mergedNames)
     }
@@ -222,11 +222,10 @@ class ProxyResultSetParser[ParsedResult, MappedResult](
 }
 
 // This class is introduced to break circular dependency between RowDataParser and its !, ?, * ResultSetParsers
-private case class ResultSetParseOps[Row](parseFunc: RowData => Row) extends BugReporting {
+private case class ResultSetParseOps[Row](parseFunc: RowData => Row) {
   private def bugUnexpectedSize(expectedSize: String, resultSet: ResultSet): Nothing = {
-    BUG(
-      s"Expected $expectedSize as a result set size, got ${resultSet.size} " +
-      s"while parsing result set of columns ${resultSet.columnNames}")
+    throw new IllegalStateException(s"Expected $expectedSize as a result set size, " +
+      s" got ${resultSet.size} while parsing result set of columns ${resultSet.columnNames}")
   }
 
   def parseSingle(resultSet: ResultSet): Row = {
@@ -246,9 +245,10 @@ private case class ResultSetParseOps[Row](parseFunc: RowData => Row) extends Bug
   }
 }
 
-trait ParserSizeBugSupport extends BugReporting {
+trait ParserSizeBugSupport {
   def BUGunexpectedSize(resultSet: ResultSet, expectedSize: String): Nothing =
-    BUG(s"Expected result set of size $expectedSize, got a result set of size ${resultSet.size}")
+    throw new IllegalStateException(s"Expected result set of size " +
+      s"$expectedSize, got a result set of size ${resultSet.size}")
 }
 
 final class SingleRowParser[Row](rowDataParser: RowDataParser[Row])

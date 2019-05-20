@@ -6,19 +6,19 @@ import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.collection.mutable
 
-private case class DbColumnDef(table: String, name: String, typeOid: Int, isNullable: Boolean, number: Int) extends BugReporting {
+private case class DbColumnDef(table: String, name: String, typeOid: Int, isNullable: Boolean, number: Int) {
   override def equals(o: Any) =
     throw new AssertionError("Do not use equals() for DbColumnDef (numeric OIDs may conform even being different)")
 
   // This stuff is frankly atrocious but suits testing purposes
   private[calldb] def conforms(that: DbColumnDef)(implicit c: Connection): Boolean = {
     val thisSqlName: String = PgType.fetchTypeName(this.typeOid)
-      .getOrElse(BUG(s"Can't fetch type name for numeric OID ${this.typeOid}"))
+      .getOrElse(throw new IllegalStateException(s"Can't fetch type name for numeric OID ${this.typeOid}"))
     val thisPgType: PgType = PgType.typeByName(thisSqlName)
-      .getOrElse(BUG(s"Can't get type by name $thisSqlName"))
+      .getOrElse(throw new IllegalStateException(s"Can't get type by name $thisSqlName"))
     // TypeOid is not a plain numeric OID, it may be used for not just type equality but type conformance comparison
     val thisTypeOid: TypeOid = thisPgType.getOrFetchOid()
-      .getOrElse(BUG(s"Can't get or fetch TypeOid"))
+      .getOrElse(throw new IllegalStateException(s"Can't get or fetch TypeOid"))
     thisTypeOid.conforms(that.typeOid)
   }
 }

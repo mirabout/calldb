@@ -55,12 +55,12 @@ class SingleRowParserTest extends Specification with RowParsersTestSupport {
       parser.!.parse(mkResultSet(1)) must_=== entities.head
     }
 
-    "trigger a BUG when result set is empty" in {
-      parser.!.parse(mkResultSet(0)) must throwAn[AssertionError]
+    "trigger an IllegalStateException when result set is empty" in {
+      parser.!.parse(mkResultSet(0)) must throwAn[IllegalStateException]
     }
 
-    "trigger a BUG when result set contains more that 1 row" in {
-      parser.!.parse(mkResultSet()) must throwAn[AssertionError]
+    "trigger an IllegalStateException when result set contains more that 1 row" in {
+      parser.!.parse(mkResultSet()) must throwAn[IllegalStateException]
     }
   }
 }
@@ -75,8 +75,8 @@ class MaybeSingleRowParserTest extends Specification with RowParsersTestSupport 
       parser.?.parse(mkResultSet(0)) must beNone
     }
 
-    "trigger a BUG when result set contains more than 1 row" in {
-      parser.?.parse(mkResultSet()) must throwA[AssertionError]
+    "trigger an IllegalStateException when result set contains more than 1 row" in {
+      parser.?.parse(mkResultSet()) must throwA[IllegalStateException]
     }
   }
 }

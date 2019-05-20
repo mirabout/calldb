@@ -73,10 +73,10 @@ sealed abstract class PgArray(oidDef: TypeOidDef, val elemType: PgType) extends 
     resultSetClass    = classOf[IndexedSeq[_]],
     sqlName           = elemType.sqlName + "[]")
 
-object PgType extends BugReporting {
+object PgType {
   // Return PgArray and not Nothing to avoid call by value in initializer since Nothing conforms to :=> PgArray
   private def failOnVoidArrayGetter: PgArray =
-    BUG("Attempt to access an array type provider for Void type")
+    throw new IllegalStateException("Attempt to access an array type provider for Void type")
 
   case object Void extends PgType(BuiltinOidDef(2278), failOnVoidArrayGetter, classOf[Unit], "VOID")
 

@@ -7,13 +7,13 @@ import com.github.mauricio.async.db.ResultSet
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
-sealed abstract class UntypedRoutine extends BugReporting {
+sealed abstract class UntypedRoutine {
   // It is intended to be set during database schema check
   var _nameInDatabase: String = _
 
   def nameInDatabase: String = {
     if (_nameInDatabase eq null) {
-      BUG(s"$this: _nameInDatabase has not been set before name access")
+      throw new IllegalStateException(s"$this: _nameInDatabase has not been set before name access")
     }
     _nameInDatabase
   }
@@ -23,7 +23,7 @@ sealed abstract class UntypedRoutine extends BugReporting {
 
   private[calldb] def nameAsMember: String = {
     if (_nameAsMember eq null) {
-      BUG(s"$this: _memberName has not been set before memberName access")
+      throw new IllegalStateException(s"$this: _memberName has not been set before memberName access")
     }
     _nameAsMember
   }
@@ -73,8 +73,8 @@ sealed abstract class UntypedRoutine extends BugReporting {
   protected final def callForResultSet(args: String*)(implicit c: Connection): Future[ResultSet] = {
     performCall(args :_*) map { queryResult =>
       if (queryResult.rows.isEmpty) {
-        BUG(s"$this($args): Expected some (zero or more) rows in query result, " +
-            s"got result $queryResult with no rows")
+        throw new IllegalStateException(s"$this($args): Expected a rows list " +
+          "in query result, got result $queryResult with no rows list at all")
       }
       queryResult.rows.get
     }
@@ -119,10 +119,11 @@ sealed abstract class UntypedProcedure extends UntypedRoutine {
   protected def call(args: String*)(implicit c: Connection): Future[Long] = {
     callForResultSet(args :_*) map { resultSet =>
       if (resultSet.size != 1) {
-        BUG(s"Expected single-row result set, got ${resultSet.size}")
+        throw new IllegalStateException(s"Expected single-row result set, got ${resultSet.size}")
       }
       if (resultSet.head.size != 1) {
-        BUG(s"Expected single-row, single column result set, got ${resultSet.head.size} columns in a single row")
+        throw new IllegalStateException(s"Expected single-row, single column " +
+          " result set, got ${resultSet.head.size} columns in a single row")
       }
       resultSet.head.head.asInstanceOf[Long]
     }

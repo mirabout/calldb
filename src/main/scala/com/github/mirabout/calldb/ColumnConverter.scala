@@ -95,7 +95,7 @@ trait ColumnWriters {
   * returned by the database connection library to an expected user-defined type for the row element.
   * @tparam A An expected row element type
   */
-trait ColumnReader[+A] extends BugReporting {
+trait ColumnReader[+A] {
   def read(rawValue: Any): A
 
   // We choose distinct names for ColumnReader and ColumnWriter methods
@@ -104,15 +104,15 @@ trait ColumnReader[+A] extends BugReporting {
 
   @inline protected final def nonNull(rawValue: Any): Any = {
     if (rawValue == null) {
-      BUG("Expected non-null value, got null one")
+      throw new IllegalArgumentException("Expected non-null value, got null one")
     }
     rawValue
   }
 
   @inline protected final def asString(rawValue: Any): String = rawValue match {
     case s: String => s
-    case null => BUG(s"Expected non-null string value, got null value")
-    case _ => BUG(s"Expected string value, got $rawValue of class ${rawValue.getClass}")
+    case null => throw new IllegalArgumentException(s"Expected non-null string value, got null value")
+    case _ => throw new IllegalArgumentException(s"Expected string value, got $rawValue of class ${rawValue.getClass}")
   }
 }
 
@@ -128,11 +128,12 @@ object ColumnReader {
 /**
   * Mixin this trait into another class to use provided implicit readers
   */
-trait ColumnReaders extends BugReporting {
+trait ColumnReaders {
   final class NoOpReader[+A](implicit classTag: ClassTag[A]) extends ColumnReader[A] {
     def read(rawValue: Any): A = nonNull(rawValue) match {
       case convertedValue: A => convertedValue
-      case _ => BUG(s"Expected value of type $classTag, got $rawValue of class ${rawValue.getClass}")
+      case _ => throw new IllegalArgumentException(s"Expected value of type " +
+        s"$classTag got $rawValue of class ${rawValue.getClass}")
     }
     override def mayReadDirectly(rawValue: Any): Boolean = { nonNull(rawValue); true }
   }
@@ -154,10 +155,10 @@ trait ColumnReaders extends BugReporting {
       case s: String => try {
         UUID.fromString(s)
       } catch {
-        case ex: Throwable => BUG(s"Can't convert string value `$s` to UUID", ex)
+        case ex: Throwable => throw new IllegalArgumentException(s"Can't convert string value `$s` to UUID", ex)
       }
       case uuid: UUID => uuid
-      case weirdValue => BUG(s"Expected uuid-like value (String or UUID), got $weirdValue")
+      case weirdValue => throw new IllegalArgumentException(s"Expected uuid-like value (String or UUID), got $weirdValue")
     }
   }
 
@@ -176,7 +177,8 @@ trait ColumnReaders extends BugReporting {
     final def read(rawValue: Any): Set[A] = {
       nonNull(rawValue) match {
         case indexedSeq: IndexedSeq[_] => readSet(indexedSeq)
-        case weirdValue => BUG(s"Expected IndexedSeq value, got value of class ${weirdValue.getClass}")
+        case weirdValue => throw new IllegalArgumentException(s"Expected " +
+          s"IndexedSeq value, got value of class ${weirdValue.getClass}")
       }
     }
 
@@ -194,11 +196,9 @@ trait ColumnReaders extends BugReporting {
   final class IndexedSeqReader[A](elemReader: ColumnReader[A]) extends ColumnReader[IndexedSeq[A]] {
     def read(rawValue: Any): IndexedSeq[A] = {
       nonNull(rawValue) match {
-        case indexedSeq: IndexedSeq[_] =>
-          readIndexedSeq(indexedSeq)
+        case indexedSeq: IndexedSeq[_] => readIndexedSeq(indexedSeq)
         // Don't bother about other types, looks like the library always returns array as IndexedSeq
-        case weirdValue =>
-          BUG(s"Expected IndexedSeq[_], got $weirdValue")
+        case weirdValue => throw new IllegalArgumentException(s"Expected IndexedSeq[_], got $weirdValue")
       }
     }
 
@@ -240,8 +240,9 @@ trait ColumnReaders extends BugReporting {
       rawValue match {
         case longValue: Long => new org.joda.time.Duration(longValue)
         case intValue: Int => new org.joda.time.Duration(intValue.toLong)
-        case null => BUG(s"Can't convert null to org.joda.time.Duration")
-        case weirdValue => BUG(s"Can't convert `$weirdValue` of class ${weirdValue.getClass} to org.joda.time.Duration")
+        case null => throw new IllegalArgumentException(s"Can't convert null to org.joda.time.Duration")
+        case weirdValue => throw new IllegalArgumentException(s"Can't convert " +
+          s"`$weirdValue` of class ${weirdValue.getClass} to org.joda.time.Duration")
       }
     }
   }
@@ -271,17 +272,16 @@ trait ColumnReaders extends BugReporting {
   * @tparam A An expected row element type
   */
 final class GenericEnumLikeConverter[A: ClassTag](private[this] val reads: Int => A, private[this] val writes: A => Int)
-  extends ColumnReader[A] with ColumnWriter[A] with BugReporting {
+  extends ColumnReader[A] with ColumnWriter[A] {
 
   private def tag = implicitly[ClassTag[A]].runtimeClass.getSimpleName
 
   def read(rawValue: Any): A = rawValue match {
-    case intValue: Int =>
-      reads.apply(intValue)
-    case null =>
-      BUG(s"Expected non-null integer value that may be converted to $tag, got null")
-    case weirdValue =>
-      BUG(s"Expected integer value that may be converted to $tag, got `$weirdValue` of class ${weirdValue.getClass}")
+    case intValue: Int => reads.apply(intValue)
+    case null => throw new IllegalArgumentException(s"Expected " +
+      "non-null integer value that may be converted to $tag, got null")
+    case weirdValue => throw new IllegalArgumentException(s"Expected " +
+      s"integer value that may be converted to $tag, got `$weirdValue` of class ${weirdValue.getClass}")
   }
 
   def write[B <: A](value: B): Any = writes.apply(value)

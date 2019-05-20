@@ -5,11 +5,13 @@ import com.github.mauricio.async.db.{Connection, RowData}
 import scala.concurrent.Future
 import scala.collection.mutable
 
-final case class TableName(exactName: String) extends BugReporting {
-  if (!exactName.startsWith("t"))
-    BUG(s"Table name `$exactName` does not start with `t`")
-  if (exactName.length == 1)
-    BUG(s"Table name consists of only `t` prefix")
+final case class TableName(exactName: String) {
+  if (!exactName.startsWith("t")) {
+    throw new IllegalArgumentException(s"Table name `$exactName` does not start with `t`")
+  }
+  if (exactName.length == 1) {
+    throw new IllegalArgumentException(s"Table name consists of only `t` prefix")
+  }
 
   val withoutPrefix = exactName.substring(1)
 }
@@ -31,7 +33,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   def allProcedures: Seq[ProceduresReflector.DefinedProcedure[_]] = {
     if (_allProcedures eq null) {
-      BUG(s"$this: `_allProcedures` var has not been set or injected")
+      throw new IllegalStateException(s"$this: `_allProcedures` var has not been set or injected")
     }
     _allProcedures
   }
@@ -40,7 +42,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   def allColumns: IndexedSeq[TableColumn[E, _]] = {
     if (_allColumns eq null) {
-      BUG(s"$this: `_allColumns` var has not been set or injected")
+      throw new IllegalStateException(s"$this: `_allColumns` var has not been set or injected")
     }
     _allColumns
   }
@@ -49,7 +51,7 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
 
   def keyColumns: IndexedSeq[TableColumn[E, _]] = {
     if (_keyColumns eq null) {
-      BUG(s"$this: `_keyColumns` var has not been set or injected")
+      throw new IllegalStateException(s"$this: `_keyColumns` var has not been set or injected")
     }
     _keyColumns
   }

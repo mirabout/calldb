@@ -37,11 +37,11 @@ sealed abstract class BasicTypeTraits extends TypeTraits {
   * @param isNullable can a database scalar value be nullable
   */
 final case class ScalarTypeTraits(classInCode: Class[_], storedInType: PgType, isNullable: Boolean = false)
-  extends BasicTypeTraits with BugReporting {
+  extends BasicTypeTraits {
   def copyWithNullable(nullable: Boolean): ScalarTypeTraits = copy(isNullable = nullable)
   def toArrayTypeTraits = ArrayTypeTraits(classInCode, storedInType.arrayType, isNullable)
   // If it gets called, it is a caller error
-  def toScalarTypeTraits: Nothing = BUG(s"$this already is a ScalarTypeTraits")
+  def toScalarTypeTraits: Nothing = throw new IllegalStateException(s"$this already are ScalarTypeTraits")
 }
 
 /**
@@ -53,12 +53,13 @@ final case class ScalarTypeTraits(classInCode: Class[_], storedInType: PgType, i
   * @param isNullable can a database array value be nullable
   */
 final case class ArrayTypeTraits(elemClassInCode: Class[_], storedInType: PgArray, isNullable: Boolean = false)
-  extends BasicTypeTraits with BugReporting {
+  extends BasicTypeTraits {
   def copyWithNullable(nullable: Boolean): ArrayTypeTraits = copy(isNullable = nullable)
   def toScalarTypeTraits = ScalarTypeTraits(elemClassInCode, storedInType.elemType)
   // If it gets called, it is an caller error
   def toArrayTypeTraits: Nothing =
-    BUG(s"$this already is an ArrayTypeTraits (arrays of arrays are not allowed as db entity fields)")
+    throw new IllegalStateException(s"$this already are ArrayTypeTraits " +
+      " (arrays of arrays are not allowed as db entity fields)")
 }
 
 /**
@@ -73,7 +74,8 @@ class CompoundTypeTraitsCompanion[T <: CompoundTypeTraits](constructor: IndexedS
   def apply(args: TypeTraits*): T = {
     val (basic, compound) = args.partition(_.isBasic)
     if (compound.nonEmpty) {
-      throw new AssertionError(s"There are compound traits $compound. Only basic type traits are allowed as arguments")
+      throw new AssertionError(s"There are compound traits" +
+        s" $compound. Only basic type traits are allowed as arguments")
     }
     constructor(basic.toIndexedSeq.asInstanceOf[IndexedSeq[BasicTypeTraits]])
   }
@@ -221,7 +223,7 @@ object TypeProvider {
   }
 }
 
-trait ColumnTypeProviders extends BugReporting {
+trait ColumnTypeProviders {
 
   import java.util.UUID
   import org.joda.time.{DateTime, LocalDateTime}
@@ -270,7 +272,7 @@ trait ColumnTypeProviders extends BugReporting {
 
   private def failOnNullElemProvider[A](elemProvider: TypeProvider[A]): Unit = {
     if (elemProvider eq null) {
-      BUG(
+      throw new IllegalArgumentException(
         s"An element type provider is null. " +
         s"It may be caused by initialization order effects. " +
         s"Prefer `def` or `lazy val` in caller code.")
@@ -285,8 +287,8 @@ trait ColumnTypeProviders extends BugReporting {
         case bt: BasicTypeTraits => bt.copyWithNullable(nullable = true)
         case ct: CompoundTypeTraits => ct match {
           case _: RowTypeTraits => OptRowTypeTraits(ct.columnsTraits)
-          case _: OptRowTypeTraits => BUG("Can't make a type traits for option of opt row")
-          case _: RowSeqTypeTraits => BUG("Can't make a type traits for option of seq of rows")
+          case _: OptRowTypeTraits => throw new IllegalArgumentException("Can't make a type traits for option of opt row")
+          case _: RowSeqTypeTraits => throw new IllegalArgumentException("Can't make a type traits for option of rows seq")
         }
       }
     }
@@ -297,7 +299,7 @@ trait ColumnTypeProviders extends BugReporting {
   : BasicTypeProvider[Option[A]] = {
     failOnNullElemProvider(elemProvider)
     if (elemProvider.typeTraits.isNullable) {
-      BUG(s"Can't make a type traits for option of option")
+      throw new IllegalArgumentException("Can't make a type traits for option of option")
     }
     TypeProvider.forTraits(elemProvider.typeTraits.copyWithNullable(nullable = true))
   }
@@ -306,10 +308,10 @@ trait ColumnTypeProviders extends BugReporting {
   : BasicTypeProvider[Coll[A]] = {
     failOnNullElemProvider(elemProvider)
     if (elemProvider.typeTraits.isNullable) {
-      BUG(s"Can't make a type traits for option of option")
+      throw new IllegalArgumentException(s"Can't make a type traits for option of option")
     }
     if (!elemProvider.typeTraits.isBasic) {
-      BUG(s"Only basic type traits are expected")
+      throw new IllegalArgumentException(s"Only basic type traits are expected")
     }
     new ArrayLikeTypeProvider(elemProvider)
   }
@@ -326,10 +328,12 @@ trait ColumnTypeProviders extends BugReporting {
       case _ => elemProvider.typeTraits match {
         case ct: CompoundTypeTraits => ct match {
           case rt: RowTypeTraits => TypeProvider.forTraits(RowSeqTypeTraits(rt))
-          case _: OptRowTypeTraits => BUG("Can't make IndexedSeq type provider for opt row type provider")
-          case _: RowSeqTypeTraits => BUG("Can't make IndexedSeq type provider for row seq type provider")
+          case _: OptRowTypeTraits => throw new IllegalArgumentException(
+            "Can't make IndexedSeq type provider for opt row type provider")
+          case _: RowSeqTypeTraits => throw new IllegalArgumentException(
+            "Can't make IndexedSeq type provider for row seq type provider")
         }
-        case _ => BUG(s"Can't make IndexedSeq type provider for $elemProvider")
+        case _ => throw new IllegalArgumentException(s"Can't make IndexedSeq type provider for $elemProvider")
       }
     }
   }
