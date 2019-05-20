@@ -9,23 +9,23 @@ class ProceduresReflectorTest extends Specification {
   import ProceduresReflector.{reflectAllProcedures, injectProcedureMemberNames}
 
   trait BaseTable1 extends ColumnReaders with ColumnWriters with ColumnTypeProviders {
-    lazy val pBaseProcedure0 = Procedure0()
-    lazy val pBaseProcedure2 = Procedure2(Param('first, 0), Param('second, 0.0))
+    lazy val pBaseProcedure0 = Procedure0(RowDataParser.long(0).single)
+    lazy val pBaseProcedure2 = Procedure2(RowDataParser.long(0).single, Param('first, 0), Param('second, 0.0))
 
     def routines: Set[ProceduresReflector.DefinedProcedure[_]] =
       Set(pBaseProcedure0, pBaseProcedure2)
   }
 
   trait BaseTable2 extends ColumnReaders with ColumnWriters with ColumnTypeProviders {
-    lazy val pBaseFunction0 = Function0(RowDataParser.string(0).seq)
-    lazy val pBaseFunction2 = Function2(RowDataParser.double(0).seq, Param('first, ""), Param('second, ""))
+    lazy val pBaseFunction0 = Procedure0(RowDataParser.string(0).seq)
+    lazy val pBaseFunction2 = Procedure2(RowDataParser.double(0).seq, Param('first, ""), Param('second, ""))
 
     def routines: Set[ProceduresReflector.DefinedProcedure[_]] =
       Set(pBaseFunction0, pBaseFunction2)
   }
 
   class DummyTable1 extends BaseTable1 with BaseTable2 {
-    lazy val pDummyFunction1 = Function1(RowDataParser.stringKVMap(0).seq, Param('id, UUID.randomUUID()))
+    lazy val pDummyFunction1 = Procedure1(RowDataParser.stringKVMap(0).seq, Param('id, UUID.randomUUID()))
 
     override lazy val routines: Set[ProceduresReflector.DefinedProcedure[_]] =
       super[BaseTable1].routines ++ super[BaseTable2].routines ++ Set(pDummyFunction1)
@@ -35,6 +35,7 @@ class ProceduresReflectorTest extends Specification {
 
   class DummyTable2 extends BaseTable1 with BaseTable2 {
     lazy val pDummyProcedure3 = Procedure3(
+      RowDataParser.long(0).single,
       Param('first, UUID.randomUUID()),
       Param('second, UUID.randomUUID()),
       Param('third, UUID.randomUUID()))
