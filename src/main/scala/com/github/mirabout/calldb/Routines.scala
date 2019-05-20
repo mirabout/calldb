@@ -125,7 +125,7 @@ sealed abstract class UntypedProcedure extends UntypedRoutine {
 sealed trait TypedCallable[R] { self: UntypedRoutine =>
   import TypedCallable._
 
-  def paramsDefs: Seq[ParamsDef[_]]
+  def paramsDefs: IndexedSeq[ParamsDef[_]]
   def resultType: TypeTraits
   def resultColumnsNames: Option[IndexedSeq[String]]
 
@@ -149,7 +149,7 @@ import TypedCallable._
 private[calldb] class DummyTypedCallable[T](name: String, val resultType: TypeTraits)
   extends UntypedRoutine with TypedCallable[T] {
   _nameInDatabase = name
-  override def paramsDefs = Seq()
+  override def paramsDefs = IndexedSeq()
   override def resultColumnsNames: Option[IndexedSeq[String]] = None
 }
 
@@ -161,14 +161,16 @@ abstract class UntypedFunction[R](parser: ResultSetParser[R]) extends UntypedRou
   }
 }
 
-abstract class AbstractTypedProcedure[R](parser: ResultSetParser[R], typeTraits: TypeTraits, val paramsDefs: ParamsDef[_]*)
-  extends UntypedFunction[R](parser) with TypedCallable[R] {
+abstract class AbstractTypedProcedure[R]
+  (parser: ResultSetParser[R], typeTraits: TypeTraits, defs: IndexedSeq[ParamsDef[_]])
+    extends UntypedFunction[R](parser) with TypedCallable[R] {
+  def paramsDefs: IndexedSeq[ParamsDef[_]] = defs
   def resultType: TypeTraits = typeTraits
   def resultColumnsNames: Option[IndexedSeq[String]] = parser.expectedColumnsNames
 }
 
 class Procedure0[R] private(parser: ResultSetParser[R], typeTraits: TypeTraits)
-  extends AbstractTypedProcedure[R](parser, typeTraits) {
+  extends AbstractTypedProcedure[R](parser, typeTraits, Array[ParamsDef[_]]()) {
 
   def apply()(implicit c: Connection): Future[R] =
     call()
@@ -186,7 +188,7 @@ object Procedure0 {
 }
 
 class Procedure1[R, T1] private(parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1])
-  extends AbstractTypedProcedure[R](parser, typeTraits, _1) {
+  extends AbstractTypedProcedure[R](parser, typeTraits, Array(_1)) {
 
   def apply(v1: T1)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1))
@@ -205,7 +207,7 @@ object Procedure1 {
 
 class Procedure2[R, T1, T2] private
   (parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1], _2: ParamsDef[T2])
-    extends AbstractTypedProcedure[R](parser, typeTraits, _1, _2) {
+    extends AbstractTypedProcedure[R](parser, typeTraits, Array(_1, _2)) {
 
   def apply(v1: T1, v2: T2)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2))
@@ -224,7 +226,7 @@ object Procedure2 {
 
 class Procedure3[R, T1, T2, T3] private
   (parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
-    extends AbstractTypedProcedure[R](parser, typeTraits, _1, _2, _3) {
+    extends AbstractTypedProcedure[R](parser, typeTraits, Array(_1, _2, _3)) {
 
   def apply(v1: T1, v2: T2, v3: T3)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2), _3.encodeParam(v3))
@@ -244,7 +246,7 @@ object Procedure3 {
 
 class Procedure4[R, T1, T2, T3, T4] private
   (parser: ResultSetParser[R], typeTraits: TypeTraits, _1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
-    extends AbstractTypedProcedure[R](parser, typeTraits, _1, _2, _3, _4) {
+    extends AbstractTypedProcedure[R](parser, typeTraits, Array(_1, _2, _3, _4)) {
 
   def apply(v1: T1, v2: T2, v3: T3, v4: T4)(implicit c: Connection): Future[R] =
     call(_1.encodeParam(v1), _2.encodeParam(v2), _3.encodeParam(v3), _4.encodeParam(v4))
