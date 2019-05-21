@@ -1,5 +1,7 @@
 package com.github.mirabout.calldb
 
+import java.util.Locale
+
 import com.github.mauricio.async.db.{Connection, RowData}
 
 import scala.concurrent.Future
@@ -14,6 +16,20 @@ final case class TableName(exactName: String) {
   }
 
   val withoutPrefix = exactName.substring(1)
+
+  def makeProcedureName(nameAsMember: String): String = {
+    if (nameAsMember.length < 3) {
+      throw new IllegalArgumentException(s"The name as member `$nameAsMember` must have at least 3 characters")
+    }
+    var cutPrefixName = nameAsMember
+    // Strip the initial 'p' if the name starts with it and is followed by an uppercase letter
+    if (cutPrefixName(0) == 'p') {
+      if (Character.toUpperCase(cutPrefixName(1)) == cutPrefixName(1)) {
+        cutPrefixName = cutPrefixName.substring(1)
+      }
+    }
+    "p" + (withoutPrefix + "_" + cutPrefixName).toLowerCase(Locale.ROOT)
+  }
 }
 
 trait NamedTable {
@@ -29,9 +45,9 @@ trait GenericEntityTable[E] extends GenericTable with NamedTable with WithAllCol
                                                            tp: BasicTypeProvider[Column]) =
     TableColumn.apply(name, extractor, this.tableName.exactName)
 
-  protected var _allProcedures: Seq[ProceduresReflector.DefinedProcedure[_]] = null
+  protected var _allProcedures: Seq[Procedure[_]] = null
 
-  def allProcedures: Seq[ProceduresReflector.DefinedProcedure[_]] = {
+  def allProcedures: Seq[Procedure[_]] = {
     if (_allProcedures eq null) {
       throw new IllegalStateException(s"$this: `_allProcedures` var has not been set or injected")
     }

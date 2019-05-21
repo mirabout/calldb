@@ -6,8 +6,6 @@ import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
-import ProceduresReflector.DefinedProcedure
-
 private[calldb] sealed abstract class DbArgMode(final val mode: String) {
   def unapply(s: String): Option[DbArgMode] =
     if (mode.equalsIgnoreCase(s)) Some(this) else None
@@ -146,14 +144,14 @@ private[calldb] trait ProcedureCheckSupport {
 }
 
 class ProcedureParamTypeChecker
-    (tableName: TableName, procedure: DefinedProcedure[_], dbDef: DbProcedureDef, param: Int)
+    (tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef, param: Int)
     (implicit c: Connection)
   extends ProcedureCheckSupport {
 
   type Result = Option[Seq[String]]
 
   private def mkError(message: String): String =
-    s"${tableName.exactName}: ${procedure.nameAsMember}: param #$param: $message"
+    s"${tableName.exactName}: $procedure: param #$param: $message"
 
   def result(): Result = {
     procedure.paramsDefs(param).typeTraits.asEitherBasicOrCompound match {
@@ -239,14 +237,14 @@ class ProcedureParamTypeChecker
 }
 
 class ProcedureReturnTypeChecker
-  (tableName: TableName, procedure: DefinedProcedure[_], dbDef: DbProcedureDef)
+  (tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef)
   (implicit c: Connection)
   extends ProcedureCheckSupport {
 
   type Result = Option[Seq[String]]
 
   private def mkError(message: String): String =
-    s"${tableName.exactName}: ${procedure.nameAsMember}: $message"
+    s"${tableName.exactName}: $procedure: $message"
 
   def result(): Result = {
     if (PgType.Record.pgNumericOid.get == dbDef.retType) {
@@ -437,13 +435,13 @@ class ProcedureReturnTypeChecker
   }
 }
 
-class ProcedureChecker(tableName: TableName, procedure: DefinedProcedure[_], dbDef: DbProcedureDef)(implicit c: Connection)
+class ProcedureChecker(tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef)(implicit c: Connection)
   extends ProcedureCheckSupport {
 
   type Result = Option[Seq[String]]
 
   private def mkError(message: String) =
-    s"${tableName.exactName}: ${procedure.nameAsMember}: $message"
+    s"${tableName.exactName}: $procedure: $message"
 
   private[calldb] def errorDBArgsCountDoesNotMatchCodeOne(): String =
     mkError(s"DB args count ${dbDef.argTypes.size} does not match code one ${procedure.paramsDefs.size}")
@@ -470,7 +468,7 @@ class ProcedureChecker(tableName: TableName, procedure: DefinedProcedure[_], dbD
     if (accumErrors.nonEmpty) Some(accumErrors) else None
   }
 
-  private[calldb] def checkProcedureParams(procedure: DefinedProcedure[_], dbDef: DbProcedureDef): Result = {
+  private[calldb] def checkProcedureParams(procedure: Procedure[_], dbDef: DbProcedureDef): Result = {
     // Further checking can't be done (it requires parameters count match)
     if (procedure.paramsDefs.size != dbDef.argTypes.size)
       return Some(Seq(errorDBArgsCountDoesNotMatchCodeOne()))
@@ -505,9 +503,9 @@ class TableProceduresChecker(tableName: TableName)(implicit c: Connection) exten
   private[calldb] def fetchCompoundTypeAttributes(compoundTypeOid: Int): Option[IndexedSeq[DbAttributeDef]] =
     super.fetchCompoundTypeAttributes(compoundTypeOid)
 
-  def checkProcedures(procedures: Traversable[DefinedProcedure[_]]): Option[Seq[String]] = {
+  def checkProcedures(procedures: Traversable[Procedure[_]]): Option[Seq[String]] = {
     val databaseProcedures: Map[String, DbProcedureDef] = fetchDbProcedureDefs()
-    val resultBuilder = new mutable.ArrayBuffer[DefinedProcedure[_]]
+    val resultBuilder = new mutable.ArrayBuffer[Procedure[_]]
     val allErrors = new mutable.ArrayBuffer[String]
 
     for (procedure <- procedures) {
@@ -522,28 +520,19 @@ class TableProceduresChecker(tableName: TableName)(implicit c: Connection) exten
     if (allErrors.nonEmpty) Some(allErrors) else None
   }
 
-  def injectProcedures(procedures: mutable.Traversable[DefinedProcedure[_]]): Unit = {
-    for (procedure <- procedures) {
-      procedure._nameInDatabase = procedure.mkQualifiedName(tableName.withoutPrefix)
-    }
-  }
-
   private[calldb] def errorProcedureNameAsMemberMustStartWithP(nameAsMember: String) =
     s"Procedure name as member $nameAsMember must start with `p`"
 
   private[calldb] def errorProcedureDoesNotHaveItsCounterpart(qualifiedName: String) =
     s"Procedure $qualifiedName does not have its counterpart in database"
 
-  private[calldb] def checkProcedure(procedure: DefinedProcedure[_], databaseProcedures: Map[String, DbProcedureDef]): Result = {
-    if (!procedure.nameAsMember.startsWith("p"))
-      return Some(Seq(errorProcedureNameAsMemberMustStartWithP(procedure.nameAsMember)))
-
-    val qualifiedName = procedure.mkQualifiedName(tableName.withoutPrefix).toLowerCase()
-    databaseProcedures.get(qualifiedName) match {
-      case None =>
-        Some(Seq(errorProcedureDoesNotHaveItsCounterpart(qualifiedName)))
-      case Some(dbDef) =>
-        new ProcedureChecker(tableName, procedure, dbDef).result()
+  private[calldb] def checkProcedure(procedure: Procedure[_], databaseOnes: Map[String, DbProcedureDef]): Result = {
+    ExistingProcedureInvocationFacility.findCallableName(procedure) match {
+      case Some(nameForInvocation) => databaseOnes.get(nameForInvocation) match {
+        case Some(dbDef) => new ProcedureChecker(tableName, procedure, dbDef).result()
+        case None => Some(Seq(errorProcedureDoesNotHaveItsCounterpart(nameForInvocation)))
+      }
+      case None => Some(Seq(s"Can't find a name for invocation of procedure $procedure"))
     }
   }
 }

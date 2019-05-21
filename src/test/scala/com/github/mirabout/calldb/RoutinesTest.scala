@@ -6,13 +6,16 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 
 import RowDataParser.returns
-import TypeProvider.{basicTypeProviderOf, basicTypeTraitsOf}
 
 trait RoutineTestSupport extends ColumnReaders with ColumnWriters with ColumnTypeProviders {
+  private def newStraightforwardInvocationFacility(name: String) = new InvocationFacility {
+    override def getCallableName(value: TypedCallable[_]): String = name
+    override def needsExistingProcedure: Boolean = true
+  }
 
-  implicit class ExplicitlyNamedRoutine[Routine <: UntypedRoutine](routine: Routine) {
-    def withName(name: String): Routine = {
-      routine._nameInDatabase = name; routine
+  implicit class ExplicitlyNamedProcedure[P <: Procedure[_]](underlying: P) {
+    def callAs(name: String): P = {
+      underlying.withInvocationFacility(newStraightforwardInvocationFacility(name)).asInstanceOf[P]
     }
   }
 
@@ -33,42 +36,16 @@ trait RoutineTestSupport extends ColumnReaders with ColumnWriters with ColumnTyp
   class WithRoutinesTestDatabaseEnvironment extends WithTestConnectionAndSqlExecuted("RoutinesTest")
 }
 
-class UntypedRoutineTest extends Specification with RoutineTestSupport {
-
-  "UntypedRoutine" should {
-    "perform call for a result set" in new WithRoutinesTestDatabaseEnvironment {
-      val routine = new DummyUntypedRoutine("DummyResultSetRoutine")
-      // This routine returns some pairs of double values named "latitude" and "longitude"
-      awaitResult(routine.accessPerformCallForResultSet()).columnNames must_=== IndexedSeq("latitude", "longitude")
-    }
-  }
-}
-
-class TypedCallableTest extends Specification with RoutineTestSupport {
-  "TypedCallable" should {
-    "build procedure call string for case when procedure result type is a scalar" in {
-      val callable = new DummyTypedCallable[Int]("Dummy", basicTypeTraitsOf[Int])
-      callable.buildCallSql() must_== "select Dummy()"
-    }
-
-    "build procedure call string for case when procedure result type is a (compound) row" in {
-      val typeProvider = tuple2TypeProvider[Int, Int](intTypeProvider, intTypeProvider)
-      val callable = new DummyTypedCallable[(Int, Int)]("Dummy", typeProvider.typeTraits)
-      callable.buildCallSql() must_== "select * from Dummy()"
-    }
-  }
-}
-
 class Procedure0Test extends Specification with RoutineTestSupport {
   "Procedure0" should {
     "allow to be called with no args for a Long affected rows count" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = Procedure0(RowDataParser.long(0).single).withName("DummyProcedure0")
+      val procedure = Procedure0.returningLong.callAs("DummyProcedure0")
       // This procedure does not do any actual work and returns a dummy value "0"
       awaitResult(procedure.apply()) must_=== 0L
     }
 
     "allow to be called with no args for a parsed result set" in new WithRoutinesTestDatabaseEnvironment {
-      val function = Procedure0(returns.int(index = 0).seq).withName("DummyFunction0")
+      val function = Procedure0(returns.int(index = 0).seq).callAs("DummyFunction0")
       val integerOid = PgType.Integer.getOrFetchOid().get.exactOid
       // This function returns OIDs of all registered PostgreSQL types
       awaitResult(function()).toSet must contain(integerOid)
@@ -79,14 +56,14 @@ class Procedure0Test extends Specification with RoutineTestSupport {
 class Procedure1Test extends Specification with RoutineTestSupport {
   "Procedure1" should {
     "allow to be called with 1 arg for a Long affected rows count" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = Procedure1(RowDataParser.long(0).single, str("arg0")).withName("DummyProcedure1")
+      val procedure = Procedure1.returningLong(str("arg0")).callAs("DummyProcedure1")
       // This procedure does not do any actual work and returns a dummy value "1"
       awaitResult(procedure("Hello, world!")) must_=== 1L
     }
 
     "allow to be called with 1 arg for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function returns length of a string as a long value
-      val function = Procedure1(returns.long(index = 0).single, str("arg0")).withName("DummyFunction1")
+      val function = Procedure1.returningLong(str("arg0")).callAs("DummyFunction1")
       awaitResult(function.apply("Hello, world!")) must_=== 13L
     }
   }
@@ -95,7 +72,7 @@ class Procedure1Test extends Specification with RoutineTestSupport {
 class Procedure2Test extends Specification with RoutineTestSupport {
   "Procedure2" should {
     "allow to be called with 2 args for a Long result" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = Procedure2(RowDataParser.long(0).single, int("arg0"), int("arg1")).withName("DummyProcedure2")
+      val procedure = Procedure2.returningLong(int("arg0"), int("arg1")).callAs("DummyProcedure2")
       // This procedure does not do any actual work and returns a dummy value "2"
       awaitResult(procedure(0, 0)) must_=== 2L
     }
@@ -103,7 +80,7 @@ class Procedure2Test extends Specification with RoutineTestSupport {
     "allow to be called with 2 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function multiplies two given Double's and returns result as a Double
       val function = Procedure2(returns.double(index = 0).single, double("arg0"), double("arg1"))
-        .withName("DummyFunction2")
+        .callAs("DummyFunction2")
       awaitResult(function.apply(6.0, 8.0)) must_=== 48.0
     }
   }
@@ -112,7 +89,7 @@ class Procedure2Test extends Specification with RoutineTestSupport {
 class Procedure3Test extends Specification with RoutineTestSupport {
   "Procedure3" should {
     "allow to be called with 3 args for a Long result" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = Procedure3(RowDataParser.long(0).single, int("arg0"), int("arg1"), int("arg2")).withName("DummyProcedure3")
+      val procedure = Procedure3.returningLong(int("arg0"), int("arg1"), int("arg2")).callAs("DummyProcedure3")
       // This procedure does not do any actual work and returns a dummy value "3"
       awaitResult(procedure.apply(0, 0, 0)) must_=== 3L
     }
@@ -121,7 +98,7 @@ class Procedure3Test extends Specification with RoutineTestSupport {
       // This function clamps arg0 using [arg1, arg2] bounds and returns result as a Double
       val function =
         Procedure3(returns.double(index = 0).single, double("arg0"), double("arg1"), double("arg2"))
-          .withName("DummyFunction3")
+          .callAs("DummyFunction3")
 
       awaitResult(function.apply(1.0, 2.0, 3.0)) must_=== 2.0
       awaitResult(function.apply(2.5, 2.0, 3.0)) must_=== 2.5
@@ -133,7 +110,7 @@ class Procedure3Test extends Specification with RoutineTestSupport {
 class Procedure4Test extends Specification with RoutineTestSupport {
   "Procedure4" should {
     "allow to be called with 4 args for a Long result" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = Procedure4(RowDataParser.long(0).single, int("arg0"), int("arg1"), int("arg2"), int("arg3")).withName("DummyProcedure4")
+      val procedure = Procedure4.returningLong(int("arg0"), int("arg1"), int("arg2"), int("arg3")).callAs("DummyProcedure4")
       // This procedure does not do any actual work and returns a dummy value "4"
       awaitResult(procedure.apply(0, 0, 0, 0)) must_=== 4L
     }
