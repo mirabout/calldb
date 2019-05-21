@@ -1,5 +1,7 @@
 package com.github.mirabout.calldb
 
+import java.util.UUID
+
 import com.github.mauricio.async.db.Connection
 import com.github.mauricio.async.db.QueryResult
 import com.github.mauricio.async.db.ResultSet
@@ -59,8 +61,26 @@ object Procedure0 {
   def apply[R](resultSetParser: ResultSetParser[R], ify: InvocationFacility)(implicit tp: TypeProvider[R]) =
     new Procedure0(resultSetParser, tp.typeTraits, ify)
 
+  def returningBoolean()(implicit tp: TypeProvider[Boolean]) =
+    apply(RowDataParser.boolean(0).single)
+
+  def returningInt()(implicit tp: TypeProvider[Int]) =
+    apply(RowDataParser.int(0).single)
+
   def returningLong()(implicit tp: TypeProvider[Long]) =
-    apply(RowDataParser.returns.long(0).single)
+    apply(RowDataParser.long(0).single)
+
+  def returningDouble()(implicit tp: TypeProvider[Double]) =
+    apply(RowDataParser.double(0).single)
+
+  def returningUuid()(implicit tp: TypeProvider[UUID]) =
+    apply(RowDataParser.uuid(0).single)
+
+  def returningString()(implicit tp: TypeProvider[String]) =
+    apply(RowDataParser.string(0).single)
+
+  def returningStringKVMap(implicit tp: TypeProvider[Map[String, Option[String]]]) =
+    apply(RowDataParser.stringKVMap(0).single)
 }
 
 class Procedure1[R, T1] private
@@ -84,8 +104,26 @@ object Procedure1 {
   def apply[R, T1](parser: ResultSetParser[R], _1: ParamsDef[T1], ify: InvocationFacility)(implicit tp: TypeProvider[R]) =
     new Procedure1(parser, tp.typeTraits, _1, ify)
 
+  def returningBoolean[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Boolean]) =
+    apply(RowDataParser.boolean(0).single, _1)
+
+  def returningInt[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Int]) =
+    apply(RowDataParser.int(0).single, _1)
+
   def returningLong[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Long]) =
-    apply(RowDataParser.returns.long(0).single, _1)
+    apply(RowDataParser.long(0).single, _1)
+
+  def returningDouble[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Double]) =
+    apply(RowDataParser.double(0).single, _1)
+
+  def returningUuid[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[UUID]) =
+    apply(RowDataParser.uuid(0).single, _1)
+
+  def returningString[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[String]) =
+    apply(RowDataParser.string(0).single, _1)
+
+  def returningStringKVMap[R, T1](_1: ParamsDef[T1])(implicit tp: TypeProvider[Map[String, Option[String]]]) =
+    apply(RowDataParser.returns.stringKVMap(0).single, _1)
 }
 
 class Procedure2[R, T1, T2] private
@@ -113,8 +151,27 @@ object Procedure2 {
       (implicit tp: TypeProvider[R]) =
         new Procedure2(parser, tp.typeTraits, _1, _2, ify)
 
+  def returningBoolean[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[Boolean]) =
+    apply(RowDataParser.boolean(0).single, _1, _2)
+
+  def returningInt[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[Int]) =
+    apply(RowDataParser.int(0).single, _1, _2)
+
   def returningLong[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[Long]) =
-    apply(RowDataParser.returns.long(0).single, _1, _2)
+    apply(RowDataParser.long(0).single, _1, _2)
+
+  def returningDouble[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[Double]) =
+    apply(RowDataParser.double(0).single, _1, _2)
+
+  def returningUuid[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[UUID]) =
+    apply(RowDataParser.uuid(0).single, _1, _2)
+
+  def returningString[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])(implicit tp: TypeProvider[String]) =
+    apply(RowDataParser.string(0).single, _1, _2)
+
+  def returningStringKVMap[R, T1, T2](_1: ParamsDef[T1], _2: ParamsDef[T2])
+    (implicit tp: TypeProvider[Map[String, Option[String]]]) =
+      apply(RowDataParser.stringKVMap(0).single, _1, _2)
 }
 
 class Procedure3[R, T1, T2, T3] private
@@ -142,8 +199,33 @@ object Procedure3 {
       (implicit tp: TypeProvider[R]) =
         new Procedure3(parser, tp.typeTraits, _1, _2, _3, ify)
 
-  def returningLong[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])(implicit tp: TypeProvider[Long]) =
-    apply(RowDataParser.returns.long(0).single, _1, _2, _3)
+  def returningBoolean[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[Boolean]) =
+      apply(RowDataParser.boolean(0).single, _1, _2, _3)
+
+  def returningInt[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[Int]) =
+      apply(RowDataParser.int(0).single, _1, _2, _3)
+
+  def returningLong[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[Long]) =
+      apply(RowDataParser.long(0).single, _1, _2, _3)
+
+  def returningDouble[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[Double]) =
+      apply(RowDataParser.double(0).single, _1, _2, _3)
+
+  def returningUuid[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[UUID]) =
+      apply(RowDataParser.uuid(0).single, _1, _2, _3)
+
+  def returningString[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[String]) =
+      apply(RowDataParser.string(0).single, _1, _2, _3)
+
+  def returningStringKVMap[T1, T2, T3](_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3])
+    (implicit tp: TypeProvider[Map[String, Option[String]]]) =
+      apply(RowDataParser.stringKVMap(0).single, _1, _2, _3)
 }
 
 class Procedure4[R, T1, T2, T3, T4] private
@@ -172,9 +254,39 @@ object Procedure4 {
       (implicit tp: TypeProvider[R]) =
         new Procedure4(parser, tp.typeTraits, _1, _2, _3, _4, ify)
 
+  def returningBoolean[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[Boolean]) =
+        apply(RowDataParser.boolean(0).single, _1, _2, _3, _4)
+
+  def returningInt[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[Int]) =
+        apply(RowDataParser.int(0).single, _1, _2, _3, _4)
+
   def returningLong[T1, T2, T3, T4]
     (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
       (implicit tp: TypeProvider[Long]) =
-          apply(RowDataParser.returns.long(0).single, _1, _2, _3, _4)
+        apply(RowDataParser.long(0).single, _1, _2, _3, _4)
+
+  def returningDouble[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[Double]) =
+        apply(RowDataParser.double(0).single, _1, _2, _3, _4)
+
+  def returningUuid[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[UUID]) =
+        apply(RowDataParser.uuid(0).single, _1, _2, _3, _4)
+
+  def returningString[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[String]) =
+        apply(RowDataParser.string(0).single, _1, _2, _3, _4)
+
+  def returningStringKVMap[T1, T2, T3, T4]
+    (_1: ParamsDef[T1], _2: ParamsDef[T2], _3: ParamsDef[T3], _4: ParamsDef[T4])
+      (implicit tp: TypeProvider[Map[String, Option[String]]]) =
+        apply(RowDataParser.stringKVMap(0).single, _1, _2, _3, _4)
 }
 

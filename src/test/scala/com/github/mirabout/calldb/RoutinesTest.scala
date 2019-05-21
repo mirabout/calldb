@@ -79,8 +79,7 @@ class Procedure2Test extends Specification with RoutineTestSupport {
 
     "allow to be called with 2 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function multiplies two given Double's and returns result as a Double
-      val function = Procedure2(returns.double(index = 0).single, double("arg0"), double("arg1"))
-        .callAs("DummyFunction2")
+      val function = Procedure2.returningDouble(double("arg0"), double("arg1")).callAs("DummyFunction2")
       awaitResult(function.apply(6.0, 8.0)) must_=== 48.0
     }
   }
@@ -89,15 +88,15 @@ class Procedure2Test extends Specification with RoutineTestSupport {
 class Procedure3Test extends Specification with RoutineTestSupport {
   "Procedure3" should {
     "allow to be called with 3 args for a Long result" in new WithRoutinesTestDatabaseEnvironment {
-      val procedure = Procedure3.returningLong(int("arg0"), int("arg1"), int("arg2")).callAs("DummyProcedure3")
+      val procedure = Procedure3.returningLong(int("arg0"), int("arg1"), int("arg2"))
+        .callAs("DummyProcedure3")
       // This procedure does not do any actual work and returns a dummy value "3"
       awaitResult(procedure.apply(0, 0, 0)) must_=== 3L
     }
 
     "allow to be called with 3 args for a parsed result set" in new WithTestConnectionAndSqlExecuted("RoutinesTest") {
       // This function clamps arg0 using [arg1, arg2] bounds and returns result as a Double
-      val function =
-        Procedure3(returns.double(index = 0).single, double("arg0"), double("arg1"), double("arg2"))
+      val function = Procedure3.returningDouble(double("arg0"), double("arg1"), double("arg2"))
           .callAs("DummyFunction3")
 
       awaitResult(function.apply(1.0, 2.0, 3.0)) must_=== 2.0
