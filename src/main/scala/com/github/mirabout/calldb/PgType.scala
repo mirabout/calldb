@@ -37,12 +37,20 @@ object CustomOidDef {
   def apply(assignableFrom: => Set[Int], assignableTo: => Set[Int]) = new CustomOidDef(assignableFrom, assignableTo)
 }
 
-class TypeOid(private[calldb] val exactOid: Int, assignableFrom: Set[Int], assignableTo: Set[Int]) {
+class TypeOid(private[calldb] val exactOid: Int, private val assignableFrom: Set[Int], private val assignableTo: Set[Int]) {
   private[calldb] def pgNumericOid: Option[Int] = Some(exactOid)
   def isAssignableFrom(thatOid: Int): Boolean = exactOid == thatOid || assignableFrom.contains(thatOid)
   def isAssignableTo(thatOid: Int): Boolean = exactOid == thatOid || assignableTo.contains(thatOid)
 
   def conforms(thatOid: Int): Boolean = isAssignableFrom(thatOid) && isAssignableTo(thatOid)
+
+  override def equals(obj: Any): Boolean = obj match {
+    case that: TypeOid => this === that
+    case _ => false
+  }
+
+  def ===(that: TypeOid): Boolean =
+    exactOid == that.exactOid && assignableTo == that.assignableTo && assignableFrom == that.assignableFrom
 
   override def toString = s"TypeOid($exactOid,assignableFrom=$assignableFrom,assignableTo=$assignableTo)"
 }

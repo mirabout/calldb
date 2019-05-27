@@ -163,7 +163,7 @@ class TableColumnsCheckerTest extends Specification {
           mkColumnDef(DummyWithPKTable.Weight, 3),
           mkColumnDef(DummyWithPKTable.Cost, 4),
           mkColumnDef(DummyWithPKTable.Images, 5).copy(typeOid = PgType.TextArray.pgNumericOid.get))
-        checker.checkColumnsTypes(DummyWithPKTable.allColumns, (for (d <- dbDefs) yield (d.name, d)).toMap) must beSome
+        checker.checkColumnsTypes(DummyWithPKTable.allColumns, dbDefs) must beSome
       }
 
       "yield successful columns type check result for well-formed columns" in new WithTestEnvironment {
@@ -174,7 +174,7 @@ class TableColumnsCheckerTest extends Specification {
           mkColumnDef(DummyNoPKTable.Altitude, 2),
           mkColumnDef(DummyNoPKTable.GpsTime, 3),
           mkColumnDef(DummyNoPKTable.Attributes, 4))
-        checker.checkColumnsTypes(DummyNoPKTable.allColumns, (for (d <- dbDefs) yield (d.name, d)).toMap) must beNone
+        checker.checkColumnsTypes(DummyNoPKTable.allColumns, dbDefs) must beNone
       }
 
       "inject columns indices based on DB attribute numbers" in new WithTestEnvironment {
