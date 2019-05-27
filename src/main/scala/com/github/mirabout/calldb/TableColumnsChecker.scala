@@ -2,9 +2,10 @@ package com.github.mirabout.calldb
 
 import com.github.mauricio.async.db.Connection
 
+import java.util.Locale
+
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.collection.mutable
 
 private case class DbColumnDef(table: String, name: String, typeOid: Int, isNullable: Boolean, number: Int) {
   override def equals(o: Any) =
@@ -80,13 +81,12 @@ object TableColumnsChecker {
 }
 
 class TableColumnsChecker[E](tableName: TableName)(implicit c: Connection) {
+  import TableCheckError._
 
   private[calldb] def fetchColumnsDefs() = TableColumnsChecker.fetchColumnsDefs(tableName)
   private[calldb] def fetchPrimaryKey() = TableColumnsChecker.fetchPrimaryKey(tableName)
 
-  private def mkError(message: String): String = s"${tableName.exactName}: $message"
-
-  def checkAndInjectColumns(allColumns: Traversable[TableColumn[E, _]]): Either[Seq[String], Traversable[TableColumn[E, _]]] = {
+  def checkAndInjectColumns(allColumns: Traversable[TableColumn[E, _]]): Either[Seq[TableCheckError], Traversable[TableColumn[E, _]]] = {
     checkAllColumns(allColumns) match {
       case Left(errors) => Left(errors)
       case Right(columnsDefs) => {
@@ -96,71 +96,40 @@ class TableColumnsChecker[E](tableName: TableName)(implicit c: Connection) {
     }
   }
 
-  private[calldb] def checkAllColumns(allColumns: Traversable[TableColumn[E, _]]): Either[Seq[String], Map[String, DbColumnDef]] = {
+  private[calldb] def checkAllColumns(allColumns: Traversable[TableColumn[E, _]]): Either[Seq[TableCheckError], Map[String, DbColumnDef]] = {
     fetchColumnsDefs() match {
-      case Some(columnsDefs) => {
-        checkAllColumns(allColumns, columnsDefs) match {
-          case Some(errors) => Left(errors)
-          case None => Right(columnsDefs.groupBy(_.name.toLowerCase()).mapValues(_.head))
-        }
+      case Some(columnsDefs) => checkAllColumns(allColumns, columnsDefs) match {
+        case Some(errors) => Left(errors)
+        case None => Right(columnsDefs.groupBy(_.name.toLowerCase()).mapValues(_.head))
       }
-      case None => {
-        Left(Seq(mkError(s"Can't fetch DB columns defs")))
-      }
+      case None => Left(Seq(CantFetchDBDefs()))
     }
   }
 
-  private[calldb] def checkAllColumns(
-    allColumns: Traversable[TableColumn[E, _]],
-    columnsDefs: Traversable[DbColumnDef])
-  : Option[Seq[String]] = {
-    val codeColumnsNames: Set[String] = allColumns.map(_.name.toLowerCase).toSet
-    val dbColumnsNames: Set[String] = columnsDefs.map(_.name.toLowerCase).toSet
-
-    if (codeColumnsNames != dbColumnsNames) {
-      val errors = new mutable.ArrayBuffer[String]
-      val onlyInCode = codeColumnsNames diff dbColumnsNames
-      val onlyInDb = dbColumnsNames diff codeColumnsNames
-      if (onlyInCode.nonEmpty) {
-        errors += mkError(s"These columns are present only in code, not in DB: $onlyInCode")
-      }
-      if (onlyInDb.nonEmpty) {
-        errors += mkError(s"These columns are present only in DB, not in code: $onlyInDb")
-      }
-      Some(errors)
-    } else {
-      checkColumnsTypes(allColumns, columnsDefs.groupBy(_.name.toLowerCase).mapValues(_.head))
+  private[calldb] def checkAllColumns(allColumns: Traversable[TableColumn[E, _]], defs: Traversable[DbColumnDef]) = {
+    val codeColumnsNames: Traversable[String] = allColumns.map(_.name)
+    val dbColumnsNames: Traversable[String] = defs.map(_.name)
+    MissingColumns.fromNames(codeColumnsNames, dbColumnsNames) match {
+      case someErrors @ Some(_) => someErrors
+      case _ => checkColumnsTypes(allColumns, defs)
     }
   }
 
-  private[calldb] def checkColumnsTypes(
-    allColumns: Traversable[TableColumn[E, _]],
-    defsByName: Map[String, DbColumnDef])
-  : Option[Seq[String]] = {
-    val accumErrors = new mutable.ArrayBuffer[String]
-    for (codeColumn <- allColumns) {
-      def mkColumnError(message: String) = mkError(s"Column $codeColumn: $message")
-      // We have ensured this won't fail
-      val dbColumnDef = defsByName(codeColumn.name.toLowerCase)
-      val codeTypeTraits = codeColumn.typeTraits.asOptBasic.get
-      codeTypeTraits.storedInType.getOrFetchOid() match {
-        case None => {
-          accumErrors += mkColumnError(s"Can't get type OID for $codeTypeTraits")
-        }
-        case Some(codeTypeOid) => {
-          if (!codeTypeOid.conforms(dbColumnDef.typeOid)) {
-            val codeTypeRepr = s"OID=${codeTypeOid.exactOid}, name=${codeTypeTraits.storedInType.sqlName}"
-            val dbTypeRepr = s"OID=${dbColumnDef.typeOid}, name=${PgType.fetchTypeName(dbColumnDef.typeOid).get}"
-            accumErrors += mkColumnError(s"Code type $codeTypeRepr does conform to DB type $dbTypeRepr")
-          } else if (codeTypeTraits.isNullable != dbColumnDef.isNullable) {
-            val isCodeColumnNullable = if (codeTypeTraits.isNullable) "is" else "is not"
-            val isDbColumnNullable = if (dbColumnDef.isNullable) "is" else "is not"
-            accumErrors += mkColumnError(s"Code column $isCodeColumnNullable nullable, DB column $isDbColumnNullable")
-          }
-        }
-      }
+  def checkColumnType(codeColumn: TableColumn[E, _], defsByName: Map[String, DbColumnDef]): Option[TableCheckError] = {
+    val dbColumnDef = defsByName(codeColumn.name.toLowerCase(Locale.ROOT))
+    val codeTypeTraits = codeColumn.typeTraits.asOptBasic.get
+    codeTypeTraits.storedInType.getOrFetchOid() match {
+      case None => Some(CantGetTypeOid(codeTypeTraits.storedInType))
+      case Some(oid) if !oid.conforms(dbColumnDef.typeOid) => Some(ColumnTypeMismatch(codeTypeTraits, dbColumnDef.typeOid))
+      case Some(_) if codeTypeTraits.isNullable != dbColumnDef.isNullable => Some(ColumnNullityMismatch(codeTypeTraits))
+      case _ => None
     }
-    if (accumErrors.nonEmpty) Some(accumErrors) else None
+  }
+
+  private[calldb] def checkColumnsTypes(allColumns: Traversable[TableColumn[E, _]], defs: Traversable[DbColumnDef]) = {
+    val defsByName = defs.groupBy(_.name.toLowerCase(Locale.ROOT)).mapValues(_.head)
+    val accumErrors = for (column <- allColumns; e <- checkColumnType(column, defsByName)) yield e
+    if (accumErrors.nonEmpty) Some(accumErrors.toSeq) else None
   }
 
   private[calldb] def injectColumns(allColumns: Traversable[TableColumn[E, _]], dbDefsByName: Map[String, DbColumnDef]): Unit = {
@@ -169,42 +138,90 @@ class TableColumnsChecker[E](tableName: TableName)(implicit c: Connection) {
     }
   }
 
-  def checkKeyColumns(keyColumns: Traversable[TableColumn[E, _]]): Option[Seq[String]] =
+  def checkKeyColumns(keyColumns: Traversable[TableColumn[E, _]]): Option[Seq[TableCheckError]] =
     checkKeyColumns(keyColumns, fetchPrimaryKey())
 
-  private[calldb] def checkKeyColumns(keyColumns: Traversable[TableColumn[E, _]], dbPrimaryKey: Option[PrimaryKey]): Option[Seq[String]] = {
+  private[calldb] def checkKeyColumns(keyColumns: Traversable[TableColumn[E, _]], dbPrimaryKey: Option[PrimaryKey]) = {
     dbPrimaryKey match {
-      case Some(primaryKey) =>
-        checkExpectedSomeKeyColumns(keyColumns, primaryKey)
-      case None =>
-        checkExpectedEmptyKeyColumns(keyColumns)
+      case Some(primaryKey) => MissingKeys.fromNames(keyColumns.map(_.name), primaryKey.columns)
+      case None if keyColumns.isEmpty => None
+      case None => Some(Seq(NoKeysInDB(keyColumns.map(_.name.toLowerCase(Locale.ROOT)).toSet)))
+    }
+  }
+}
+
+sealed abstract class TableCheckError {
+  def description: String
+}
+
+object TableCheckError {
+  case class CantFetchDBDefs() extends TableCheckError {
+    def description: String = s"Can't fetch DB columns defs"
+  }
+
+  case class CantGetTypeOid(codeType: PgType) extends TableCheckError {
+    def description: String = s"Can't retrieve a type OID for code type $codeType"
+  }
+
+  case class ColumnTypeMismatch(codeOid: PgType, dbTypeName: String) extends TableCheckError {
+    def description: String = s"The code column of type $codeOid does not conform to the DB type $dbTypeName"
+  }
+
+  object ColumnTypeMismatch {
+    def apply(codeTraits: BasicTypeTraits, dbOid: Int)(implicit c: Connection): ColumnTypeMismatch =
+      ColumnTypeMismatch(codeTraits.storedInType, PgType.fetchTypeName(dbOid).get)
+  }
+
+  case class ColumnNullityMismatch(codeOid: PgType, isCodeColumnNullable: Boolean) extends TableCheckError {
+    def description: String = {
+      val desiredNullity = if (isCodeColumnNullable) "should be" else "shouldn't be"
+      s"The column of type $codeOid $desiredNullity in the DB"
     }
   }
 
-  private[calldb] def checkExpectedSomeKeyColumns(keyColumns: Traversable[TableColumn[E, _]], primaryKey: PrimaryKey): Option[Seq[String]] = {
-    if (keyColumns.isEmpty)
-      return Some(Seq(mkError(s"Code key columns are absent, DB key columns ${primaryKey.columns} are present")))
-
-    val codeColumnsSet = keyColumns.map(_.name.toLowerCase).toSet
-    val dbColumnsSet = primaryKey.columns.map(_.toLowerCase).toSet
-    if (codeColumnsSet == dbColumnsSet)
-      return None
-
-    val errors = new mutable.ArrayBuffer[String]
-    val onlyInCode = codeColumnsSet diff dbColumnsSet
-    val onlyInDb = dbColumnsSet diff codeColumnsSet
-    if (onlyInCode.nonEmpty) {
-      errors += mkError(s"These key columns are present only in code: $onlyInCode")
-    }
-    if (onlyInDb.nonEmpty) {
-      errors += mkError(s"These key columns are present only in DB: $onlyInDb")
-    }
-    Some(errors)
+  object ColumnNullityMismatch {
+    def apply(codeTraits: BasicTypeTraits): ColumnNullityMismatch =
+      apply(codeTraits.storedInType, isCodeColumnNullable = codeTraits.isNullable)
   }
 
-  private[calldb] def checkExpectedEmptyKeyColumns(keyColumns: Traversable[TableColumn[E, _]]): Option[Seq[String]] = {
-    if (keyColumns.isEmpty) None else {
-      Some(Seq(mkError(s"Code key columns $keyColumns are present, DB key columns are absent")))
+  case class NoKeysInCode(columnNames: Set[String]) extends TableCheckError {
+    def description: String = s"There are key columns $columnNames in the DB while no keys are defined in the code"
+  }
+
+  case class NoKeysInDB(columnNames: Set[String]) extends TableCheckError {
+    def description: String = s"There are key columns $columnNames in the code while no keys are defined in the DB"
+  }
+
+  sealed abstract class MissingSomeColumns(tag: String, names: Set[String], wherePresent: String, whereAbsent: String)
+    extends TableCheckError {
+    def description: String = s"$tag columns $names are present only in $wherePresent and not in $whereAbsent"
+  }
+
+  sealed class Companion[E1 <: MissingInCode, E2 <: MissingInDB](cons1: Set[String] => E1, cons2: Set[String] => E2) {
+    def fromNames(codeNames: Traversable[String], dbNames: Traversable[String]): Option[Seq[MissingSomeColumns]] = {
+      val codeNamesSet = codeNames.map(_.toLowerCase(Locale.ROOT)).toSet
+      val dbNamesSet = dbNames.map(_.toLowerCase(Locale.ROOT)).toSet
+      if (codeNamesSet == dbNamesSet) None else {
+        def maybeSingleErr(set: Set[String], c: Set[String] => MissingSomeColumns) =
+          if (set.nonEmpty) Seq(c(set)) else Seq()
+        val missingInCodeSet = dbNamesSet diff codeNamesSet
+        val missingInDBSet = codeNamesSet diff dbNamesSet
+        Some(maybeSingleErr(missingInCodeSet, cons1) ++ maybeSingleErr(missingInDBSet, cons2))
+      }
     }
   }
+
+  sealed abstract class MissingInDB(tag: String, columnNames: Set[String])
+    extends MissingSomeColumns(tag, columnNames, "the code", "the DB")
+
+  sealed class MissingInCode(tag: String, columnNames: Set[String])
+    extends MissingSomeColumns(tag, columnNames, "the DB", "the code")
+
+  case class MissingColumnsInDB(columnNames: Set[String]) extends MissingInDB("Columns", columnNames)
+  case class MissingColumnsInCode(columnNames: Set[String]) extends MissingInCode("Columns", columnNames)
+  object MissingColumns extends Companion(MissingColumnsInCode, MissingColumnsInDB)
+
+  case class MissingKeysInDB(keyColumnNames: Set[String]) extends MissingInDB("Keys", keyColumnNames)
+  case class MissingKeysInCode(keyColumnNames: Set[String]) extends MissingInCode("Keys", keyColumnNames)
+  object MissingKeys extends Companion(MissingKeysInCode, MissingKeysInDB)
 }

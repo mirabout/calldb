@@ -143,15 +143,94 @@ private[calldb] trait ProcedureCheckSupport {
   }
 }
 
-class ProcedureParamTypeChecker
-    (tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef, param: Int)
-    (implicit c: Connection)
-  extends ProcedureCheckSupport {
+sealed abstract class ProcedureCheckError {
+  def description: String
+}
 
-  type Result = Option[Seq[String]]
+object ProcedureCheckError {
+  case class NoDatabaseCounterpart(nameForInvocation: String) extends ProcedureCheckError {
+    def description: String = s"The procedure invoked as $nameForInvocation does not have its counterpart in database"
+  }
+  case class NoInvocationName(p: Procedure[_]) extends ProcedureCheckError {
+    def description: String = s"A procedure $p does not have a registered name for invocation"
+  }
+}
 
-  private def mkError(message: String): String =
-    s"${tableName.exactName}: $procedure: param #$param: $message"
+sealed abstract class ParamCheckError extends ProcedureCheckError
+
+object ParamCheckError {
+  case class ArgCountMismatch(codeSize: Int, dbSize: Int) extends ParamCheckError {
+    override def description: String = s"DB args count $dbSize does not match code one $codeSize"
+  }
+
+  case class BasicNameMismatch(param: Int, codeName: String, dbName: String) extends ParamCheckError {
+    def description: String = s"A code parameter name `$codeName` does not match " +
+      s"the database name `$dbName` (a code parameter name gets prefixed by an underscore " +
+      s"while calling procedures for basic (scalar/array of scalars) types)"
+  }
+
+  case class CompoundNameMismatch(param: Int, codeName: String, dbName: String) extends ParamCheckError {
+    def description: String = s"A code parameter name `$codeName` does not match the database name `$dbName` " +
+      s"(an exact match is expected for parameters of compound (records/tables and their arrays) types)"
+  }
+
+  case class CantGetTypeOid(basicTraits: BasicTypeTraits) extends ParamCheckError {
+    def description = s"Can't get type OID for parameter type traits $basicTraits"
+  }
+
+  case class BasicOidMismatch(codeOid: TypeOid, codeTypeName: String, dbOid: Int, dbTypeName: String)
+    extends ParamCheckError {
+    def description = s"Code TypeOid $codeOid (name=$codeTypeName) does not conform to DB type OID=$dbOid, name=$dbTypeName"
+  }
+
+  object BasicOidMismatch {
+    def apply(codeOid: TypeOid, dbOid: Int)(implicit c: Connection): BasicOidMismatch = {
+      val codeTypeName = PgType.fetchTypeName(codeOid.exactOid).getOrElse("<cannot be retrieved>")
+      val dbTypeName = PgType.fetchTypeName(dbOid).getOrElse("<cannot be retrieved>")
+      BasicOidMismatch(codeOid, codeTypeName, dbOid, dbTypeName)
+    }
+  }
+
+  case class CantGetTypeAttrs(oid: Int, typeName: String) extends ParamCheckError {
+    def description: String = s"Can't get DB compound type attributes for code parameter " +
+      s"type OID=$oid, name=$typeName (is the type compound? does the type exist in database?)"
+  }
+
+  object CantGetTypeAttrs {
+    def apply(oid: Int)(implicit c: Connection): CantGetTypeAttrs =
+      CantGetTypeAttrs(oid, PgType.fetchTypeName(oid).getOrElse("<cannot be retrieved>"))
+  }
+
+  case class AttrSizeMismatch(attrDefsSize: Int, codeTraitsSize: Int) extends ParamCheckError {
+    def description: String = s"Attribute defs size $attrDefsSize does not match code type traits size $codeTraitsSize"
+  }
+
+  case class CantGetAttrOid(index: Int) extends ParamCheckError {
+    def description: String = s"Can't get type OID for attribute #$index"
+  }
+
+  case class AttrOidMismatch(index: Int, codeOid: TypeOid, codeTypeName: String, dbOid: Int, dbTypeName: String)
+    extends ParamCheckError {
+    def description: String = s"Code TypeOid $codeOid (name=$codeTypeName) " +
+      s"does not match DB type OID=$dbOid, name=$dbTypeName for attribute #$index"
+  }
+
+  object AttrOidMismatch {
+    def apply(index: Int, codeOid: TypeOid, dbOid: Int)(implicit c: Connection): AttrOidMismatch = {
+      val codeTypeName = PgType.fetchTypeName(codeOid.exactOid).getOrElse("<cannot be retrieved>")
+      val dbTypeName = PgType.fetchTypeName(dbOid).getOrElse("<cannot be retrieved>")
+      AttrOidMismatch(index, codeOid, codeTypeName, dbOid, dbTypeName)
+    }
+  }
+}
+
+class ProcedureParamTypeChecker (tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef, param: Int)
+  (implicit c: Connection)
+    extends ProcedureCheckSupport {
+
+  import ParamCheckError._
+
+  type Result = Option[Seq[ParamCheckError]]
 
   def result(): Result = {
     procedure.paramsDefs(param).typeTraits.asEitherBasicOrCompound match {
@@ -160,57 +239,20 @@ class ProcedureParamTypeChecker
     }
   }
 
-  private[calldb] def errorCantGetTypeOid(basicTraits: BasicTypeTraits) =
-    mkError(s"Can't get type OID for parameter type traits $basicTraits")
-
-  private[calldb] def errorCodeTypeOidDoesNotConform(codeTypeOid: TypeOid, dbOid: Int)(implicit c: Connection) = {
-    val codeTypeName = PgType.fetchTypeName(codeTypeOid.exactOid).getOrElse("<cannot be retrieved>")
-    val dbTypeName = PgType.fetchTypeName(dbOid).getOrElse("<cannot be retrieved>")
-    mkError(s"Code TypeOid $codeTypeOid (name=$codeTypeName) does not conform to DB type OID=$dbOid, name=$dbTypeName")
-  }
-
   protected def checkBasicParamType(basicTraits: BasicTypeTraits): Result = {
     basicTraits.storedInType.getOrFetchOid() match {
-      case None =>
-        Some(Seq(errorCantGetTypeOid(basicTraits)))
-      case Some(codeTypeOid) => {
-        if (codeTypeOid.isAssignableFrom(dbDef.argTypes(param))) None else {
-          Some(Seq(errorCodeTypeOidDoesNotConform(codeTypeOid, dbDef.argTypes(param))))
-        }
-      }
+      case None => Some(Seq(CantGetTypeOid(basicTraits)))
+      case Some(codeTypeOid) if codeTypeOid.isAssignableFrom(dbDef.argTypes(param)) => None
+      case Some(codeTypeOid) => Some(Seq(BasicOidMismatch(codeTypeOid, dbDef.argTypes(param))))
     }
   }
 
-  private[calldb] def errorCantGetCompoundTypeAttributes(oid: Int)(implicit c: Connection) = {
-    val typeName = PgType.fetchTypeName(oid)
-    mkError(s"Can't get DB compound type attributes for code parameter type OID=$oid, " +
-            s"name=$typeName (is the type compound? does the type exist in database?)")
-  }
-
-  private[calldb] def errorAttributeDefsSizeDoesNotMatch(attrDefsSize: Int, codeTraitsSize: Int) =
-    mkError(s"Attribute defs size $attrDefsSize does not match code type traits size $codeTraitsSize")
-
-  private[calldb] def errorCantGetAttributeOid(index: Int) =
-    mkError(s"Can't get type OID for attribute #$index")
-
-  private[calldb] def errorCodeAttributeOidDoesNotMatch(index: Int, codeOid: TypeOid, dbOid: Int)(implicit c: Connection) = {
-    val codeTypeName = PgType.fetchTypeName(codeOid.exactOid).getOrElse("<cannot be retrieved>")
-    val dbTypeName = PgType.fetchTypeName(dbOid).getOrElse("<cannot be retrieved>")
-    mkError(s"Code TypeOid $codeOid (name=$codeTypeName) does not match " +
-            s"DB type OID=$dbOid, name=$dbTypeName for attribute #$index")
-  }
-
   private[calldb] def checkCompoundParamType(compoundTraits: CompoundTypeTraits): Result = {
+    val compoundSize = compoundTraits.columnsTraits.size
     fetchCompoundTypeAttributes(dbDef.argTypes(param)) match {
-      case None =>
-        Some(Seq(errorCantGetCompoundTypeAttributes(dbDef.argTypes(param))))
-      case Some(attributeDefs) => {
-        if (attributeDefs.size != compoundTraits.columnsTraits.size) {
-          Some(Seq(errorAttributeDefsSizeDoesNotMatch(attributeDefs.size, compoundTraits.columnsTraits.size)))
-        } else {
-          checkCompoundTypeAttributes(attributeDefs, compoundTraits)
-        }
-      }
+      case None => Some(Seq(CantGetTypeAttrs(dbDef.argTypes(param))))
+      case Some(attrDefs) if attrDefs.size == compoundSize => checkCompoundTypeAttributes(attrDefs, compoundTraits)
+      case Some(attrDefs) => Some(Seq(AttrSizeMismatch(attrDefs.size, compoundSize)))
     }
   }
 
@@ -220,74 +262,127 @@ class ProcedureParamTypeChecker
       * Procedure compound parameters are supplied via SQL ROW() operator, which accepts only positional arguments.
       * Thus, code and database attributes must match exactly.
       */
-    val accumErrors = new mutable.ArrayBuffer[String]
+    val accumErrors = new mutable.ArrayBuffer[ParamCheckError]
     for (((attrDef, columnTraits), index) <- attributeDefs.zip(compoundTypeTraits.columnsTraits).zipWithIndex) {
       columnTraits.storedInType.getOrFetchOid() match {
-        case None =>
-          accumErrors += errorCantGetAttributeOid(index)
-        case Some(codeOid) => {
-          if (!codeOid.isAssignableFrom(attrDef.typeId)) {
-            accumErrors += errorCodeAttributeOidDoesNotMatch(index, codeOid, attrDef.typeId)
-          }
-        }
+        case None => accumErrors += CantGetAttrOid(index)
+        case Some(codeOid) if codeOid.isAssignableFrom(attrDef.typeId) => ()
+        case Some(codeOid) => accumErrors += AttrOidMismatch(index, codeOid, attrDef.typeId)
       }
     }
     if (accumErrors.nonEmpty) Some(accumErrors) else None
   }
 }
 
-class ProcedureReturnTypeChecker
-  (tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef)
+sealed abstract class ReturnTypeCheckError extends ProcedureCheckError
+
+object ReturnTypeCheckError {
+  case class ExpectedBasicType(typeTraits: TypeTraits) extends ReturnTypeCheckError {
+    def description: String = s"Expected basic return type to match DB def, got $typeTraits"
+  }
+
+  case class ExpectedCompoundType(typeTraits: TypeTraits) extends ReturnTypeCheckError {
+    def description: String = s"Expected compound return type to match DB def, got $typeTraits"
+  }
+
+  case class FailedToFetchAttrs(dbCompoundType: DbCompoundType) extends ReturnTypeCheckError {
+    def description: String = s"Failed to fetch compound type attributes for return type $dbCompoundType"
+  }
+
+  case class CantGetCodeTypeOid(codeRetType: PgType) extends ReturnTypeCheckError {
+    def description: String = s"Can't get code type OID for $codeRetType"
+  }
+
+  case class CantGetCodeColumnTypeOid(name: String, codeRetType: PgType) extends ReturnTypeCheckError {
+    def description: String = s"Can't get code type OID for column `$name` of $codeRetType"
+  }
+
+  case class ReturnTypeMismatch(codeRetType: PgType, dbType: Int) extends ReturnTypeCheckError {
+    def description: String = s"Code return type $codeRetType doesn't conform to DB return type $dbType"
+  }
+
+  case class ReturnColumnTypeMismatch(name: String, codeRetType: PgType, dbType: Int) extends ReturnTypeCheckError {
+    def description: String = s"Code return type $codeRetType doesn't conform to DB return type $dbType for column `$name`"
+  }
+
+  case class MissingResultColumnNames() extends ReturnTypeCheckError {
+    def description: String = s"Result column names are not specified, can't check DB result set columns"
+  }
+
+  case class NotATableArgMode(argModes: Traversable[DbArgMode]) extends ReturnTypeCheckError {
+    def description: String = s"Weird output table arg mode value(s): $argModes, expected only ${DbArgMode.Table}"
+  }
+
+  case class TraitsAndNamesSizeMismatch(traits: CompoundTypeTraits, names: Seq[String]) extends ReturnTypeCheckError {
+    def description: String = s"Column traits $traits size does not match column names $names size"
+  }
+
+  private def columnNamesAsSet(columnNames: Seq[String]): Set[String] = {
+    if (columnNames.isEmpty) {
+      throw new IllegalArgumentException("Column names must not be empty")
+    }
+    val set = columnNames.map(_.toLowerCase).toSet
+    if (set.size != columnNames.size) {
+      throw new IllegalArgumentException(s"There were duplicated columns" +
+        s"in $columnNames (considering collation case-insensitive)")
+    }
+    set
+  }
+
+  case class PresentOnlyInCode(columnNames: Set[String]) extends ReturnTypeCheckError {
+    def description: String = s"Result columns $columnNames are present only in code, not in DB"
+  }
+
+  object PresentOnlyInCode {
+    def apply(columnNames: String*): PresentOnlyInCode = PresentOnlyInCode(columnNamesAsSet(columnNames))
+  }
+
+  case class PresentOnlyInDB(columnNames: Set[String]) extends ReturnTypeCheckError {
+    def description: String = s"Result columns $columnNames are present only in DB, not in code"
+  }
+
+  object PresentOnlyInDB {
+    def apply(columnNames: String*): PresentOnlyInDB = PresentOnlyInDB(columnNamesAsSet(columnNames))
+  }
+}
+
+class ProcedureReturnTypeChecker(tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef)
   (implicit c: Connection)
-  extends ProcedureCheckSupport {
+    extends ProcedureCheckSupport {
 
-  type Result = Option[Seq[String]]
+  import ReturnTypeCheckError._
 
-  private def mkError(message: String): String =
-    s"${tableName.exactName}: $procedure: $message"
-
-  def result(): Result = {
+  def result(): Option[Seq[ReturnTypeCheckError]] = {
     if (PgType.Record.pgNumericOid.get == dbDef.retType) {
       checkProcedureRecordReturnType()
     } else {
       fetchUserDefinedCompoundTypes().get(dbDef.retType) match {
-        case Some(userDefinedType) =>
-          checkProcedureUserDefinedCompoundReturnType(userDefinedType)
-        case None =>
-          checkProcedureScalarReturnType()
+        case Some(userDefinedType) => checkProcedureCompoundUdt(userDefinedType)
+        case None => checkProcedureScalarReturnType()
       }
     }
   }
 
-  private[calldb] def errorExpectedCompoundReturnType() =
-    mkError(s"Expected compound return type to match DB def, got ${procedure.resultType}")
+  private def testColumnType(codeName: String, codeTraits: BasicTypeTraits, dbOid: Int): Option[ReturnTypeCheckError] = {
+    codeTraits.storedInType.getOrFetchOid() match {
+      case None => Some(CantGetCodeColumnTypeOid(codeName, codeTraits.storedInType))
+      case Some(codeTypeOid) if codeTypeOid.conforms(dbOid) => None
+      case Some(_) => Some(ReturnColumnTypeMismatch(codeName, codeTraits.storedInType, dbOid))
+    }
+  }
 
-  private[calldb] def errorResultColumnNamesAreNotSpecified() =
-    mkError(s"Result column names are not specified, can't check DB result set columns")
+  private def mkColumnNamesMismatchErrors(onlyInCode: Set[String], onlyInDb: Set[String]) = {
+    assert(onlyInCode.size + onlyInDb.size > 0)
+    val seqOnlyInCode = if (onlyInCode.nonEmpty) Seq(PresentOnlyInCode(onlyInCode)) else Seq()
+    val seqOnlyInDb = if (onlyInDb.nonEmpty) Seq(PresentOnlyInDB(onlyInDb)) else Seq()
+    Some(seqOnlyInCode ++ seqOnlyInDb)
+  }
 
-  private[calldb] def errorWeirdArgModes(argModes: Traversable[DbArgMode]) =
-    mkError(s"Weird output table arg mode value(s): $argModes, expected only ${DbArgMode.Table}")
-
-  private[calldb] def errorColumnTraitsSizeDoesNotMatch(codeTypeTraits: CompoundTypeTraits, columnNames: Seq[String]) =
-    mkError(s"Column traits ${codeTypeTraits.columnsTraits} size does not match column names $columnNames size")
-
-  private[calldb] def errorColumnsArePresentOnlyInCode(columns: Traversable[String]) =
-    mkError(s"Result columns ${columns.toSet} are present only in code, not in DB")
-
-  private[calldb] def errorColumnsArePresentOnlyInDB(columns: Traversable[String]) =
-    mkError(s"Result columns ${columns.toSet} are present only in DB, not in code")
-
-  private[calldb] def errorCantGetOrFetchColimnTypeOid(codeColumnName: String, codeColumnType: PgType) =
-    mkError(s"Column $codeColumnName: can't get (or fetch) TypeOid for $codeColumnType")
-
-  private[calldb] def errorCodeColumnTypeOidDoesNotConform(codeColumnName: String, codeTypeOid: TypeOid, dbOid: Int) =
-    mkError(s"Column $codeColumnName: code TypeOid $codeTypeOid does not conform to DB OID $dbOid")
-
-  private[calldb] def checkProcedureRecordReturnType(): Result = {
+  private[calldb] def checkProcedureRecordReturnType(): Option[Seq[ReturnTypeCheckError]] = {
 
     // Expect a compound type
     if (procedure.resultType.isBasic)
-      return Some(Seq(errorExpectedCompoundReturnType()))
+      return Some(Seq(ExpectedBasicType(procedure.resultType)))
 
     val codeTypeTraits: CompoundTypeTraits = procedure.resultType.asOptCompound.get
 
@@ -296,12 +391,12 @@ class ProcedureReturnTypeChecker
       * Thus, columns in output result set may be arranged in any order as long as unordered signature is the same.
       * Instead, name conformance matters, we should check whether output columns are named as expected.
       */
-    if (procedure.resultColumnsNames.isEmpty) {
-      return Some(Seq(errorResultColumnNamesAreNotSpecified()))
-    }
+    if (procedure.resultColumnsNames.isEmpty)
+      return Some(Seq(MissingResultColumnNames()))
+
     val codeColumnNames = procedure.resultColumnsNames.get.map(_.toLowerCase)
     if (codeTypeTraits.columnsTraits.size != codeColumnNames.size)
-      return Some(Seq(errorColumnTraitsSizeDoesNotMatch(codeTypeTraits, codeColumnNames)))
+      return Some(Seq(TraitsAndNamesSizeMismatch(codeTypeTraits, codeColumnNames)))
 
     // First, drop names of call signature args and leave only output table column args
     val dbRecordNames = dbDef.argNames.drop(dbDef.argTypes.size)
@@ -314,7 +409,7 @@ class ProcedureReturnTypeChecker
 
     // To continue checking does not make sense
     if (dbRecordArgModes.exists(_ != DbArgMode.Table))
-      return Some(Seq(errorWeirdArgModes(dbRecordArgModes)))
+      return Some(Seq(NotATableArgMode(dbRecordArgModes)))
 
     val dbOidsByName: Map[String, Int] = dbRecordNames.zip(dbRecordTypeOids).toMap
 
@@ -322,54 +417,32 @@ class ProcedureReturnTypeChecker
     val onlyInDb = dbOidsByName.keySet diff codeColumnNames.toSet
 
     if (onlyInCode.nonEmpty || onlyInDb.nonEmpty) {
-      // TODO: Replace with Seq[Option[String]] and flatten?
-      val errors = new mutable.ArrayBuffer[String]
-      if (onlyInCode.nonEmpty) {
-        errors += errorColumnsArePresentOnlyInCode(onlyInCode)
-      }
-      if (onlyInDb.nonEmpty) {
-        errors += errorColumnsArePresentOnlyInDB(onlyInDb)
-      }
-      // To continue checking does not make sense
-      return Some(errors)
+      return mkColumnNamesMismatchErrors(onlyInCode, onlyInDb)
     }
 
-    val accumErrors = new mutable.ArrayBuffer[String]
-    for ((codeColumnTypeTraits, codeColumnName) <- codeTypeTraits.columnsTraits.zip(codeColumnNames)) {
-      // We have ensured above that columns names match, so this call always succeed
-      val dbColumnTypeOid = dbOidsByName(codeColumnName)
-      codeColumnTypeTraits.storedInType.getOrFetchOid() match {
-        case None =>
-          accumErrors += errorCantGetOrFetchColimnTypeOid(codeColumnName, codeColumnTypeTraits.storedInType)
-        case Some(codeTypeOid) => {
-          if (!codeTypeOid.conforms(dbColumnTypeOid)) {
-            accumErrors += errorCodeColumnTypeOidDoesNotConform(codeColumnName, codeTypeOid, dbColumnTypeOid)
-          }
-        }
-      }
+    val accumErrors: Seq[ReturnTypeCheckError] = {
+      for {
+        (traits, name) <- codeTypeTraits.columnsTraits.zip(codeColumnNames)
+        dbOid = dbOidsByName(name)
+        err <- testColumnType(name, traits, dbOid)
+      } yield err
     }
     if (accumErrors.nonEmpty) Some(accumErrors) else None
   }
 
-  private[calldb] def errorCantFetchCompoundTypeAttributes(dbCompoundType: DbCompoundType) =
-    mkError(s"Can't fetch compound type attributes for $dbCompoundType")
-
-  private[calldb] def errorCantGetOrFetchReturnColumnTypeOid(columnName: String, columnType: PgType) =
-    mkError(s"Return column $columnName: can't get (or fetch) TypeOid for $columnType")
-
-  private[calldb] def checkProcedureUserDefinedCompoundReturnType(dbCompoundType: DbCompoundType) : Result = {
+  private[calldb] def checkProcedureCompoundUdt(dbCompoundType: DbCompoundType) : Option[Seq[ReturnTypeCheckError]] = {
     if (procedure.resultType.isBasic)
-      return Some(Seq(errorExpectedCompoundReturnType()))
+      return Some(Seq(ExpectedBasicType(procedure.resultType)))
 
     val columnsTraitsSeq = procedure.resultType.asOptCompound.get.columnsTraits
 
     if (procedure.resultColumnsNames.isEmpty)
-      return Some(Seq(errorResultColumnNamesAreNotSpecified()))
+      return Some(Seq(MissingResultColumnNames()))
 
     val codeColumnsNames = procedure.resultColumnsNames.get.map(_.toLowerCase)
     val optCompoundTypeAttrs = fetchCompoundTypeAttributes(dbCompoundType.typeId)
     if (optCompoundTypeAttrs.isEmpty)
-      return Some(Seq(errorCantFetchCompoundTypeAttributes(dbCompoundType)))
+      return Some(Seq(FailedToFetchAttrs(dbCompoundType)))
 
     // TODO: Why an attempt to destructure this in for-comprehension does not compile?
     val compoundTypeAttrs: IndexedSeq[DbAttributeDef] = optCompoundTypeAttrs.get
@@ -378,161 +451,87 @@ class ProcedureReturnTypeChecker
     val namesOnlyInCode = codeColumnsNames.toSet diff dbAttrByName.keySet
     val namesOnlyInDb = dbAttrByName.keySet diff codeColumnsNames.toSet
     if (namesOnlyInCode.nonEmpty || namesOnlyInDb.nonEmpty) {
-      // TODO: Use Seq[Option[String]] and flatten?
-      val errors = new mutable.ArrayBuffer[String]
-      if (namesOnlyInCode.nonEmpty) {
-        errors += errorColumnsArePresentOnlyInCode(namesOnlyInCode)
-      }
-      if (namesOnlyInDb.nonEmpty) {
-        errors += errorColumnsArePresentOnlyInDB(namesOnlyInDb)
-      }
-      // Further checking does not make sense (since it is requeires names match)
-      return Some(errors)
+      return mkColumnNamesMismatchErrors(namesOnlyInCode, namesOnlyInDb)
     }
 
-    val accumErrors = new mutable.ArrayBuffer[String]
-    for ((columnTraits, columnName) <- columnsTraitsSeq.zip(codeColumnsNames)) {
-      val attrOid: Int = dbAttrByName(columnName).typeId
-      columnTraits.storedInType.getOrFetchOid() match {
-        case None =>
-          accumErrors += errorCantGetOrFetchReturnColumnTypeOid(columnName, columnTraits.storedInType)
-        case Some(codeTypeOid) => {
-          if (!codeTypeOid.conforms(attrOid)) {
-            accumErrors += errorCodeColumnTypeOidDoesNotConform(columnName, codeTypeOid, attrOid)
-          }
-        }
-      }
+    val accumErrors: Seq[ReturnTypeCheckError] = {
+      for {
+        (traits, name) <- columnsTraitsSeq.zip(codeColumnsNames)
+        dbOid = dbAttrByName(name).typeId
+        err <- testColumnType(name, traits, dbOid)
+      } yield err
     }
     if (accumErrors.nonEmpty) Some(accumErrors) else None
   }
 
-  private[calldb] def errorExpectedBasicReturnType(): String =
-    mkError(s"Expected basic return type to match DB def, got ${procedure.resultType}")
-
-  private[calldb] def errorCantGetCodeTypeOid(codeRetType: PgType): String =
-    mkError(s"Can't get code type OID for $codeRetType")
-
-  private[calldb] def errorCodeBasicReturnTypeDoesNotConform(codeRetType: PgType) =
-    mkError(s"Code return type $codeRetType does not conform to DB return type ${dbDef.retType}")
-
-  private[calldb] def checkProcedureScalarReturnType(): Result = {
+  private[calldb] def checkProcedureScalarReturnType(): Option[Seq[ReturnTypeCheckError]] = {
     if (procedure.resultType.isCompound) {
-      return Some(Seq(errorExpectedBasicReturnType()))
+      return Some(Seq(ExpectedCompoundType(procedure.resultType)))
     }
 
     val codeRetType: PgType = procedure.resultType.asOptBasic.get.storedInType
     codeRetType.getOrFetchOid() match {
-      case None => {
-        return Some(Seq(errorCantGetCodeTypeOid(codeRetType)))
-      }
-      case Some(codeRetTypeOid) => {
-        if (!codeRetTypeOid.isAssignableFrom(dbDef.retType)) {
-          return Some(Seq(errorCodeBasicReturnTypeDoesNotConform(codeRetType)))
-        }
-      }
+      case None => Some(Seq(CantGetCodeTypeOid(codeRetType)))
+      case Some(codeRetTypeOid) if codeRetTypeOid.isAssignableFrom(dbDef.retType) => None
+      case Some(_) => Some(Seq(ReturnTypeMismatch(codeRetType, dbDef.retType)))
     }
-    None
   }
 }
 
 class ProcedureChecker(tableName: TableName, procedure: Procedure[_], dbDef: DbProcedureDef)(implicit c: Connection)
   extends ProcedureCheckSupport {
 
-  type Result = Option[Seq[String]]
-
-  private def mkError(message: String) =
-    s"${tableName.exactName}: $procedure: $message"
-
-  private[calldb] def errorDBArgsCountDoesNotMatchCodeOne(): String =
-    mkError(s"DB args count ${dbDef.argTypes.size} does not match code one ${procedure.paramsDefs.size}")
-
-  private[calldb] def errorBasicParamNameMismatch(param: Int, codeName: String, dbName: String): String = {
-    mkError(
-      s"A code parameter name `$codeName` does not match the database name `$dbName` " +
-      s"(a code parameter name gets prefixed by an underscore " +
-      s"while calling procedures for basic (scalar/array of scalars) types)")
-  }
-
-  private[calldb] def errorCompoundParamNameMismatch(param: Int, codeName: String, dbName: String): String = {
-    mkError(
-      s"A code parameter name `$codeName` does not match the database name `$dbName` " +
-      s"(an exact match is expected for parameters of compound (records/tables and their arrays) types)")
-  }
-
-  def result(): Result = {
-    val accumErrors = new mutable.ArrayBuffer[String]
-    for (errors <- new ProcedureReturnTypeChecker(tableName, procedure, dbDef).result())
-      accumErrors ++= errors
-    for (errors <- checkProcedureParams(procedure, dbDef))
-      accumErrors ++= errors
+  def result(): Option[Seq[ProcedureCheckError]] = {
+    val maybeRetTypeErrors = new ProcedureReturnTypeChecker(tableName, procedure, dbDef).result()
+    val maybeParamErrors = checkProcedureParams(procedure, dbDef)
+    val accumErrors = maybeRetTypeErrors.toSeq.flatten ++ maybeParamErrors.toSeq.flatten
     if (accumErrors.nonEmpty) Some(accumErrors) else None
   }
 
-  private[calldb] def checkProcedureParams(procedure: Procedure[_], dbDef: DbProcedureDef): Result = {
+  private[calldb] def checkProcedureParams(p: Procedure[_], dbDef: DbProcedureDef): Option[Seq[ProcedureCheckError]] = {
     // Further checking can't be done (it requires parameters count match)
-    if (procedure.paramsDefs.size != dbDef.argTypes.size)
-      return Some(Seq(errorDBArgsCountDoesNotMatchCodeOne()))
+    if (p.paramsDefs.size != dbDef.argTypes.size)
+      return Some(Seq(ParamCheckError.ArgCountMismatch(p.paramsDefs.size, dbDef.argTypes.size)))
 
-    val accumErrors = new mutable.ArrayBuffer[String]
+    val accumErrors = new mutable.ArrayBuffer[ParamCheckError]
     for (((dbTypeOid, paramDef), i) <- dbDef.argTypes.zip(procedure.paramsDefs).zipWithIndex) {
       new ProcedureParamTypeChecker(tableName, procedure, dbDef, i).result() match {
-        case Some(errors) =>
-          accumErrors ++= errors
-        case None =>
-          val (codeName, dbName) = (paramDef.name, dbDef.argNames(i))
-          if (paramDef.typeTraits.isBasic) {
-            if (s"${codeName}_".toLowerCase() != dbName.toLowerCase()) {
-              accumErrors += errorBasicParamNameMismatch(i, codeName, dbName)
-            }
-          } else if (codeName.toLowerCase() != dbName.toLowerCase()) {
-            accumErrors += errorCompoundParamNameMismatch(i, codeName, dbName)
-          }
+        case Some(errors) => accumErrors ++= errors
+        case None => accumErrors ++= checkParamNames(paramDef, dbDef.argNames(i), i)
       }
     }
     if (accumErrors.nonEmpty) Some(accumErrors) else None
+  }
+
+  private def checkParamNames(paramDef: TypedCallable.ParamsDef[_], dbName: String, index: Int) = {
+    val codeName = paramDef.name
+    if (paramDef.typeTraits.isBasic) {
+      if (s"${codeName}_".toLowerCase() == dbName.toLowerCase()) None else {
+        Some(ParamCheckError.BasicNameMismatch(index, codeName, dbName))
+      }
+    } else if (codeName.toLowerCase() == dbName.toLowerCase()) None else {
+      Some(ParamCheckError.CompoundNameMismatch(index, codeName, dbName))
+    }
   }
 }
 
 class TableProceduresChecker(tableName: TableName)(implicit c: Connection) extends ProcedureCheckSupport {
-  type Result = Option[Seq[String]]
-
-  private[calldb] def fetchDbProcedureDefs(): Map[String, DbProcedureDef] =
-    super.fetchDbProcedureDefs()
-  private[calldb] def fetchUserDefinedCompoundTypes(): Map[Int, DbCompoundType] =
-    super.fetchUserDefinedCompoundTypes()
-  private[calldb] def fetchCompoundTypeAttributes(compoundTypeOid: Int): Option[IndexedSeq[DbAttributeDef]] =
-    super.fetchCompoundTypeAttributes(compoundTypeOid)
-
-  def checkProcedures(procedures: Traversable[Procedure[_]]): Option[Seq[String]] = {
-    val databaseProcedures: Map[String, DbProcedureDef] = fetchDbProcedureDefs()
-    val resultBuilder = new mutable.ArrayBuffer[Procedure[_]]
-    val allErrors = new mutable.ArrayBuffer[String]
-
-    for (procedure <- procedures) {
-      checkProcedure(procedure, databaseProcedures) match {
-        case Some(errors) =>
-          allErrors ++= errors
-        case None =>
-          resultBuilder += procedure
-      }
+  def checkProcedures(procedures: Traversable[Procedure[_]]): Option[Seq[ProcedureCheckError]] = {
+    val databaseProcedures: Map[String, DbProcedureDef] = super.fetchDbProcedureDefs()
+    val accumErrors: Seq[ProcedureCheckError] = {
+      for (p <- procedures.toSeq; errors <- checkProcedure(p, databaseProcedures).toSeq; e <- errors)
+        yield e
     }
-
-    if (allErrors.nonEmpty) Some(allErrors) else None
+    if (accumErrors.nonEmpty) Some(accumErrors) else None
   }
 
-  private[calldb] def errorProcedureNameAsMemberMustStartWithP(nameAsMember: String) =
-    s"Procedure name as member $nameAsMember must start with `p`"
-
-  private[calldb] def errorProcedureDoesNotHaveItsCounterpart(qualifiedName: String) =
-    s"Procedure $qualifiedName does not have its counterpart in database"
-
-  private[calldb] def checkProcedure(procedure: Procedure[_], databaseOnes: Map[String, DbProcedureDef]): Result = {
-    ExistingProcedureInvocationFacility.findCallableName(procedure) match {
-      case Some(nameForInvocation) => databaseOnes.get(nameForInvocation) match {
-        case Some(dbDef) => new ProcedureChecker(tableName, procedure, dbDef).result()
-        case None => Some(Seq(errorProcedureDoesNotHaveItsCounterpart(nameForInvocation)))
+  private[calldb] def checkProcedure(p: Procedure[_], dbOnes: Map[String, DbProcedureDef]): Option[Seq[ProcedureCheckError]] = {
+    ExistingProcedureInvocationFacility.findCallableName(p) match {
+      case Some(nameForInvocation) => dbOnes.get(nameForInvocation) match {
+        case Some(dbDef) => new ProcedureChecker(tableName, p, dbDef).result()
+        case None => Some(Seq(ProcedureCheckError.NoDatabaseCounterpart(nameForInvocation)))
       }
-      case None => Some(Seq(s"Can't find a name for invocation of procedure $procedure"))
+      case None => Some(Seq(ProcedureCheckError.NoInvocationName(p)))
     }
   }
 }
