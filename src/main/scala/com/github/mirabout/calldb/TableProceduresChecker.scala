@@ -1,6 +1,6 @@
 package com.github.mirabout.calldb
 
-import com.github.mauricio.async.db.Connection
+import com.github.mauricio.async.db.{Connection, ResultSet, RowData}
 
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -27,118 +27,146 @@ private[calldb] object DbArgMode {
   }
 }
 
-private[calldb] case class DbProcedureDef(
-  name: String,
-  argTypes: IndexedSeq[Int],
-  allArgTypes: IndexedSeq[Int],
-  argModes: IndexedSeq[DbArgMode],
-  argNames: IndexedSeq[String],
-  retType: Int)
+private[calldb] case class DbProcedureDef(name: String, argTypes: IndexedSeq[Int], allArgTypes: IndexedSeq[Int],
+                                          argModes: IndexedSeq[DbArgMode], argNames: IndexedSeq[String], retType: Int)
 
 private[calldb] case class DbCompoundType(name: String, typeId: Int, elemOid: Int, arrayOid: Int)
 
-private[calldb] case class DbAttributeDef(name: String, typeId: Int, number: Int)
+private[calldb] case class DbAttrDef(name: String, typeId: Int, number: Int)
 
 private[calldb] trait ProcedureCheckSupport {
+  private val Name = "proname"
+  private val RetType = "prorettype"
+  private val ArgTypes = "proargtypes"
+  private val AllArgTypes = "proallargtypes"
+  private val ArgModes = "proargmodes"
+  private val ArgNames = "proargnames"
+
   // Casting p.proargtypes to int[] directly produces a funky output that crashes pg-async library
-  private val proceduresDefsQuery: String =
-    """
-      |SELECT
-      |  p.proname as proname,
-      |  p.prorettype::int as prorettype,
-      |  string_to_array(p.proargtypes::text, ' ')::int[] as proargtypes,
-      |  p.proallargtypes::int[] as proallargtypes,
-      |  p.proargmodes::text[] as proargmodes,
-      |  p.proargnames::text[] as proargnames
-      |FROM pg_catalog.pg_proc p
-      |  JOIN pg_catalog.pg_namespace n
-      |    ON p.pronamespace = n.oid
-      |WHERE n.nspname = 'public' AND p.prolang != 13
+  private val procDefsQuery: String =
+    s"""
+      |select
+      |  p.proname                                         as $Name,
+      |  p.prorettype::int                                 as $RetType,
+      |  string_to_array(p.proargtypes::text, ' ')::int[]  as $ArgTypes,
+      |  p.proallargtypes::int[]                           as $AllArgTypes,
+      |  p.proargmodes::text[]                             as $ArgModes,
+      |  p.proargnames::text[]                             as $ArgNames
+      |from pg_catalog.pg_proc p
+      |  join pg_catalog.pg_namespace n
+      |    on p.pronamespace = n.oid
+      |where n.nspname = 'public' and p.prolang != 13
     """.stripMargin
 
-  private val proceduresDefsParser = new RowDataParser[DbProcedureDef](row =>
-    DbProcedureDef(
-      row("proname").asInstanceOf[String],
-      Option(row("proargtypes")).getOrElse(IndexedSeq()).asInstanceOf[IndexedSeq[Int]],
-      Option(row("proallargtypes")).getOrElse(IndexedSeq()).asInstanceOf[IndexedSeq[Int]],
-      Option(row("proargmodes")).getOrElse(IndexedSeq()).asInstanceOf[IndexedSeq[String]].map(s => DbArgMode(s)),
-      Option(row("proargnames")).getOrElse(IndexedSeq()).asInstanceOf[IndexedSeq[String]],
-      row("prorettype").asInstanceOf[Int])) {
+  private def parseSeq[A](row: RowData, name: String): IndexedSeq[A] =
+    Option(row(name)).getOrElse(IndexedSeq()).asInstanceOf[IndexedSeq[A]]
+
+  private def parseDef(row: RowData): DbProcedureDef = {
+    val name = row(Name).asInstanceOf[String]
+    val argTypes = parseSeq[Int](row, ArgTypes)
+    val allArgTypes = parseSeq[Int](row, AllArgTypes)
+    val argModes = parseSeq[String](row, ArgModes).map(DbArgMode.apply)
+    val argNames = parseSeq[String](row, ArgNames)
+    val retType = row(RetType).asInstanceOf[Int]
+    DbProcedureDef(name, argTypes, allArgTypes, argModes, argNames, retType)
+  }
+
+  private val procDefsParser = new RowDataParser[DbProcedureDef](parseDef) {
     def expectedColumnsNames: Option[IndexedSeq[String]] =
-      Some(IndexedSeq("proname", "proargtypes", "proallargtypes", "proargmodes", "proargnames", "prorettype"))
+      Some(IndexedSeq(Name, RetType, ArgTypes, AllArgTypes, ArgModes, ArgNames))
   }
 
-  private val compoundTypeQuery: String =
-    """
-      |SELECT t.typname as typname, t.oid::int as typoid, t.typelem::int as typelem, t.typarray::int as typarray
-      |FROM pg_type t
-      |  JOIN pg_namespace ns
-      |    ON t.typnamespace = ns.oid
-      |WHERE t.typrelid > 0
-      |  AND ns.nspname = 'public'
+  private val TypName = "typname"
+  private val TypOid = "typoid"
+  private val TypElem = "typelem"
+  private val TypArray = "typarray"
+
+  private val typeQuery: String =
+    s"""
+      |select
+      |  t.typname         as $TypName,
+      |  t.oid::int        as $TypOid,
+      |  t.typelem::int    as $TypElem,
+      |  t.typarray::int   as $TypArray
+      |from pg_type t
+      |  join pg_namespace ns
+      |    on t.typnamespace = ns.oid
+      |where t.typrelid > 0
+      |  and ns.nspname = 'public'
     """.stripMargin
 
-  private val compoundTypeParser = new RowDataParser[DbCompoundType](row =>
-    DbCompoundType(
-      row("typname").asInstanceOf[String],
-      row("typoid").asInstanceOf[Int],
-      row("typelem").asInstanceOf[Int],
-      row("typarray").asInstanceOf[Int])) {
-    def expectedColumnsNames = Some(IndexedSeq("typname", "typoid", "typelem", "typarray"))
+  private def parseType(row: RowData): DbCompoundType = {
+    (row(TypName), row(TypOid), row(TypElem), row(TypArray)) match {
+      case (name: String, oid: Int, elemOid: Int, arrayOid: Int) =>
+        DbCompoundType(name, oid, elemOid, arrayOid)
+    }
   }
+
+  private val typeParser = new RowDataParser[DbCompoundType](parseType) {
+    def expectedColumnsNames = Some(IndexedSeq(TypName, TypOid, TypElem, TypArray))
+  }
+
+  private val AttName = "attname"
+  private val AttTypId = "atttypid"
+  private val AttNum = "attnum"
 
   private def attributeDefsQueryByOid(compoundTypeOid: Int): String =
     s"""
-       |SELECT
-       |  a.attname as attname,
-       |  a.atttypid::int as atttypid,
-       |  (a.attnum::int - 1) as attnum
-       |FROM pg_class c, pg_attribute a, pg_type t
-       |WHERE t.oid = $compoundTypeOid
-       |  AND a.attnum > 0
-       |  AND a.attrelid = c.oid
-       |  AND a.attrelid = t.typrelid
-       |  AND a.atttypid > 0
-       |ORDER BY a.attnum
+       |select
+       |  a.attname             as $AttName,
+       |  a.atttypid::int       as $AttTypId,
+       |  (a.attnum::int - 1)   as $AttNum
+       |from pg_class c, pg_attribute a, pg_type t
+       |where t.oid = $compoundTypeOid
+       |  and a.attnum > 0
+       |  and a.attrelid = c.oid
+       |  and a.attrelid = t.typrelid
+       |  and a.atttypid > 0
+       |order by a.attnum
      """.stripMargin
 
-  private val attribureDefsParser = new RowDataParser[DbAttributeDef](row =>
-    (row("attname"), row("atttypid"), row("attnum")) match {
+  private def parseAttr(row: RowData) = {
+    (row(AttName), row(AttTypId), row(AttNum)) match {
       case (name: String, typeId: Int, number: Int) =>
-        DbAttributeDef(name, typeId, number)
+        DbAttrDef(name, typeId, number)
     }
-  ) {
-    def expectedColumnsNames = Some(IndexedSeq("attname", "atttypid", "attnum"))
   }
 
+  private val attrDefsParser = new RowDataParser[DbAttrDef](parseAttr) {
+    def expectedColumnsNames = Some(IndexedSeq(AttName, AttTypId, AttNum))
+  }
+
+  private def fetchResultSet(query: String)(implicit c: Connection): ResultSet =
+    Await.result(c.sendQuery(query), 5.seconds).rows.get
+
   def fetchDbProcedureDefs()(implicit c: Connection): Map[String, DbProcedureDef] = {
-    val queryResult = Await.result(c.sendQuery(proceduresDefsQuery), 5.seconds)
-    val parsedProcedures = proceduresDefsParser.*.parse(queryResult.rows.get)
+    val parsedProcedures = procDefsParser.seq.parse(fetchResultSet(procDefsQuery))
     parsedProcedures.groupBy(_.name).mapValues(_.head)
   }
 
   def fetchUserDefinedCompoundTypes()(implicit c: Connection): Map[Int, DbCompoundType] = {
-    val queryResult = Await.result(c.sendQuery(compoundTypeQuery), 5.seconds)
-    val parsedTypes = compoundTypeParser.*.parse(queryResult.rows.get)
+    val parsedTypes = typeParser.seq.parse(fetchResultSet(typeQuery))
     parsedTypes.groupBy(_.typeId).mapValues(_.head)
   }
 
-  def fetchCompoundTypeAttributes(compoundTypeOid: Int)(implicit c: Connection): Option[IndexedSeq[DbAttributeDef]] = {
-    _fetchCompoundTypeAttributes(compoundTypeOid) match {
-      case someAttrs @ Some(_) => someAttrs
-      case None => {
-        val udtByArrayOid: Map[Int, DbCompoundType] =
-          fetchUserDefinedCompoundTypes().values.filter(_.arrayOid > 0).groupBy(_.arrayOid).mapValues(_.head)
-        udtByArrayOid.get(compoundTypeOid) flatMap { elemTypeDef =>
-          _fetchCompoundTypeAttributes(elemTypeDef.typeId)
-        }
+  def fetchCompoundTypeAttrs(compoundTypeOid: Int)(implicit c: Connection): Option[IndexedSeq[DbAttrDef]] = {
+    // The supplied type OID may be an OID of an array.
+    // Try getting attributes of the argument OID first.
+    // In case of missing attributes consider the supplied OID an array.
+    // Fetch an OID of its elements and return attributes of an element OID.
+    val maybeScalarAttrs = fetchAttrs(compoundTypeOid)
+    if (maybeScalarAttrs.isDefined) maybeScalarAttrs else {
+      val arrayTypes = fetchUserDefinedCompoundTypes().values.filter(_.arrayOid > 0)
+      val typesMap = arrayTypes.groupBy(_.arrayOid).mapValues(_.head)
+      typesMap.get(compoundTypeOid) flatMap { elemTypeDef =>
+        fetchAttrs(elemTypeDef.typeId)
       }
     }
   }
 
-  private def _fetchCompoundTypeAttributes(compoundTypeOid: Int)(implicit c: Connection): Option[IndexedSeq[DbAttributeDef]] = {
-    val queryResult = Await.result(c.sendQuery(attributeDefsQueryByOid(compoundTypeOid)), 5.seconds)
-    val parsedAttributes = attribureDefsParser.*.parse(queryResult.rows.get)
+  private def fetchAttrs(compoundTypeOid: Int)(implicit c: Connection): Option[IndexedSeq[DbAttrDef]] = {
+    val query = attributeDefsQueryByOid(compoundTypeOid)
+    val parsedAttributes = attrDefsParser.seq.parse(fetchResultSet(query))
     if (parsedAttributes.nonEmpty) Some(parsedAttributes) else None
   }
 }
@@ -249,21 +277,20 @@ class ProcedureParamTypeChecker (tableName: TableName, procedure: Procedure[_], 
 
   private[calldb] def checkCompoundParamType(compoundTraits: CompoundTypeTraits): Result = {
     val compoundSize = compoundTraits.columnsTraits.size
-    fetchCompoundTypeAttributes(dbDef.argTypes(param)) match {
+    fetchCompoundTypeAttrs(dbDef.argTypes(param)) match {
       case None => Some(Seq(CantGetTypeAttrs(dbDef.argTypes(param))))
-      case Some(attrDefs) if attrDefs.size == compoundSize => checkCompoundTypeAttributes(attrDefs, compoundTraits)
+      case Some(attrDefs) if attrDefs.size == compoundSize => checkCompoundTypeAttrs(attrDefs, compoundTraits)
       case Some(attrDefs) => Some(Seq(AttrSizeMismatch(attrDefs.size, compoundSize)))
     }
   }
 
-  private[calldb] def checkCompoundTypeAttributes(attributeDefs: IndexedSeq[DbAttributeDef],
-                                                  compoundTypeTraits: CompoundTypeTraits): Result = {
+  private[calldb] def checkCompoundTypeAttrs(attrDefs: IndexedSeq[DbAttrDef], traits: CompoundTypeTraits): Result = {
     /**
       * Procedure compound parameters are supplied via SQL ROW() operator, which accepts only positional arguments.
       * Thus, code and database attributes must match exactly.
       */
     val accumErrors = new mutable.ArrayBuffer[ParamCheckError]
-    for (((attrDef, columnTraits), index) <- attributeDefs.zip(compoundTypeTraits.columnsTraits).zipWithIndex) {
+    for (((attrDef, columnTraits), index) <- attrDefs.zip(traits.columnsTraits).zipWithIndex) {
       columnTraits.storedInType.getOrFetchOid() match {
         case None => accumErrors += CantGetAttrOid(index)
         case Some(codeOid) if codeOid.isAssignableFrom(attrDef.typeId) => ()
@@ -440,12 +467,12 @@ class ProcedureReturnTypeChecker(tableName: TableName, procedure: Procedure[_], 
       return Some(Seq(MissingResultColumnNames()))
 
     val codeColumnsNames = procedure.resultColumnsNames.get.map(_.toLowerCase)
-    val optCompoundTypeAttrs = fetchCompoundTypeAttributes(dbCompoundType.typeId)
+    val optCompoundTypeAttrs = fetchCompoundTypeAttrs(dbCompoundType.typeId)
     if (optCompoundTypeAttrs.isEmpty)
       return Some(Seq(FailedToFetchAttrs(dbCompoundType)))
 
     // TODO: Why an attempt to destructure this in for-comprehension does not compile?
-    val compoundTypeAttrs: IndexedSeq[DbAttributeDef] = optCompoundTypeAttrs.get
+    val compoundTypeAttrs: IndexedSeq[DbAttrDef] = optCompoundTypeAttrs.get
     val dbAttrByName = (for (attr <- compoundTypeAttrs) yield (attr.name, attr)).toMap
 
     val namesOnlyInCode = codeColumnsNames.toSet diff dbAttrByName.keySet

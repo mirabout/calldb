@@ -1,6 +1,6 @@
 package com.github.mirabout.calldb
 
-import com.github.mauricio.async.db.Connection
+import com.github.mauricio.async.db.{Connection, ResultSet, RowData}
 
 import java.util.Locale
 
@@ -39,44 +39,47 @@ private case class PrimaryKey(override val table: String, columns: IndexedSeq[St
 object TableColumnsChecker {
   private def mkColumnsQuery(tableName: TableName): String = {
     s"""
-       |SELECT lower(table_name), lower(column_name), pg_type.oid::integer, is_nullable='YES', ordinal_position
-       |FROM information_schema.columns
-       | JOIN pg_type
-       |   ON information_schema.columns.udt_name = pg_type.typname
-       |WHERE lower(table_name) = lower('${tableName.exactName}') AND table_schema = 'public'
-       |ORDER BY ordinal_position
+       |select lower(table_name), lower(column_name), pg_type.oid::integer, is_nullable='YES', ordinal_position
+       |from information_schema.columns
+       | join pg_type
+       |   on information_schema.columns.udt_name = pg_type.typname
+       |where lower(table_name) = lower('${tableName.exactName}') and table_schema = 'public'
+       |order by ordinal_position
     """.stripMargin
   }
 
-  private val columnDefParser = new RowDataParser[DbColumnDef](row => {
+  private def parseDefs(row: RowData) = {
     (row(0), row(1), row(2), row(3), row(4)) match {
       case (table: String, name: String, oid: Int, isNullable: Boolean, number: Int) =>
         DbColumnDef(table, name, oid, isNullable, number - 1)
     }
-  }) {
+  }
+
+  private val columnDefParser = new RowDataParser[DbColumnDef](parseDefs) {
     def expectedColumnsNames: Option[IndexedSeq[String]] = None // Unused
   }
 
   private def mkPrimaryKeysQuery(tableName: TableName): String = {
     s"""
-       |SELECT lower(a.attname)
-       |FROM pg_index i
-       |  JOIN pg_attribute a
-       |    ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-       |WHERE i.indrelid = lower('${tableName.exactName}')::regclass AND i.indisprimary
+       |select lower(a.attname)
+       |from pg_index i
+       |  join pg_attribute a
+       |    on a.attrelid = i.indrelid and a.attnum = any(i.indkey)
+       |where i.indrelid = lower('${tableName.exactName}')::regclass and i.indisprimary
      """.stripMargin
   }
 
+  private def fetchResultSet(query: String)(implicit c: Connection): ResultSet =
+    Await.result(c.sendQuery(query), 5.seconds).rows.get
+
   private[calldb] def fetchColumnsDefs(tableName: TableName)(implicit c: Connection): Option[IndexedSeq[DbColumnDef]] = {
-    val queryResult = Await.result(c.sendQuery(mkColumnsQuery(tableName)), 5.seconds)
-    val rawColumnsDefs = columnDefParser.*.parse(queryResult.rows.get)
-    if (rawColumnsDefs.nonEmpty) Some(rawColumnsDefs) else None
+    val rawDefs = columnDefParser.seq.parse(fetchResultSet(mkColumnsQuery(tableName)))
+    if (rawDefs.nonEmpty) Some(rawDefs) else None
   }
 
   private[calldb] def fetchPrimaryKey(tableName: TableName)(implicit c: Connection): Option[PrimaryKey] = {
-    val queryResult = Await.result(c.sendQuery(mkPrimaryKeysQuery(tableName)), 5.seconds)
-    val rawColumnNames = RowDataParser.string(0).*.parse(queryResult.rows.get)
-    if (rawColumnNames.nonEmpty) Some(PrimaryKey(tableName.exactName.toLowerCase, rawColumnNames)) else None
+    val rawNames = RowDataParser.string(0).seq.parse(fetchResultSet(mkPrimaryKeysQuery(tableName)))
+    if (rawNames.nonEmpty) Some(PrimaryKey(tableName.exactName.toLowerCase, rawNames)) else None
   }
 }
 

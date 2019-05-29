@@ -102,8 +102,8 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         fetchedTypes.values.map(_.name) must containAllOf(Seq("geopoint", "geopoint3d"))
       }
 
-      "provide fetchCompoundTypeAttributes() object method" in new WithTestEnvironment {
-        fetchCompoundTypeAttributes(Int.MaxValue) must beNone
+      "provide fetchCompoundTypeAttrs() object method" in new WithTestEnvironment {
+        fetchCompoundTypeAttrs(Int.MaxValue) must beNone
 
         val userDefinedTypeByOid: Map[Int, DbCompoundType] =
           (for (t <- fetchUserDefinedCompoundTypes().values) yield (t.typeId, t)).toMap
@@ -119,14 +119,14 @@ class TableProceduresCheckerTest extends Specification with ProcedureCheckSuppor
         PgType.typeByOid(dummyProc5Def.retType) must beNone
         userDefinedTypeByOid must beDefinedAt(dummyProc5Def.retType)
 
-        val optProc5TypeAttribs = fetchCompoundTypeAttributes(dummyProc5Def.retType)
+        val optProc5TypeAttribs = fetchCompoundTypeAttrs(dummyProc5Def.retType)
         optProc5TypeAttribs must beSome
         val Some(proc5TypeAttribs) = optProc5TypeAttribs
 
         proc5TypeAttribs must beDefinedAt(0, 1, 2)
-        proc5TypeAttribs(0) must_=== DbAttributeDef("latitude", PgType.Double.pgNumericOid.get, 0)
-        proc5TypeAttribs(1) must_=== DbAttributeDef("longitude", PgType.Double.pgNumericOid.get, 1)
-        proc5TypeAttribs(2) must_=== DbAttributeDef("altitude", PgType.Double.pgNumericOid.get, 2)
+        proc5TypeAttribs(0) must_=== DbAttrDef("latitude", PgType.Double.pgNumericOid.get, 0)
+        proc5TypeAttribs(1) must_=== DbAttrDef("longitude", PgType.Double.pgNumericOid.get, 1)
+        proc5TypeAttribs(2) must_=== DbAttrDef("altitude", PgType.Double.pgNumericOid.get, 2)
       }
 
       "reject procedures that can't be found by name in database" in new WithTestEnvironment {
